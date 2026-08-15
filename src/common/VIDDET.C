@@ -83,7 +83,15 @@ static int equip_video(void)
     return (int)((r.x.ax >> 4) & 3);
 }
 
-int vid_class(void)
+/* The adapter cannot change while a program runs, so the probe sequence
+ * - up to four BIOS calls, one of which makes the BIOS fill a 64-byte
+ * block - is run once and the answer kept.  HWINFO and CASTMARK both ask
+ * more than once, and vid_is_vga() used to re-run the whole ladder just
+ * to compare the result with VID_VGA. */
+static int vid_cached = VID_UNKNOWN;
+static int vid_known  = 0;
+
+static int vid_probe(void)
 {
     int eq, dcc = probe_dcc();
 
@@ -109,6 +117,15 @@ int vid_class(void)
     if (eq == 1 || eq == 2)
         return VID_CGA;
     return VID_UNKNOWN;
+}
+
+int vid_class(void)
+{
+    if (!vid_known) {
+        vid_cached = vid_probe();
+        vid_known  = 1;
+    }
+    return vid_cached;
 }
 
 const char *vid_name(int cls)

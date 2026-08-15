@@ -11,6 +11,11 @@
 #  its null-modem protocol can never be tried on real hardware in CI -
 #  round trip, header-covering CRC, duplicate suppression and the
 #  alternating sequence bit are all asserted here or nowhere.
+#
+#  Also the shared UI toolkit, which draws every screen in the suite:
+#  it is pointed at an ordinary array and every primitive is diffed
+#  against the per-cell implementation it replaced, because no CI job
+#  can look at a real VGA text screen.
 #  Needs only gcc.  Exit 0 = all green.
 # =====================================================================
 set -euo pipefail
@@ -44,6 +49,15 @@ gcc -x c -std=c89 -Wall -Wextra -Werror -Isrc/common \
 echo "== running test_castmark_scale =="
 "$OUT/test_castmark_scale"
 
+echo
+echo "== building tests/unit/test_ui.c against src/common/UI.C =="
+gcc -x c -std=c89 -Wall -Wextra -Werror -Dfar= -Dnear= \
+    -Ici/stubs -Isrc/common \
+    -o "$OUT/test_ui" tests/unit/test_ui.c
+
+"$OUT/test_ui"
+
+echo
 echo "== building tests/unit/test_castlink.c against src/castlink/CASTLINK.C =="
 gcc -x c -std=c89 -Wall -Wextra -Werror -Dfar= -Dnear= -DCASTLINK_TEST \
     -Ici/stubs -Isrc/common \

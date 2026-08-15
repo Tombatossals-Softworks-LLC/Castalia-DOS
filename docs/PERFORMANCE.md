@@ -179,6 +179,21 @@ and a glyph appears in the right color. There is no blitting, no plane
 switching, no software font rasterizer, and no large framebuffer crossing the
 16-bit bus on every update.
 
+**One word per cell, and clip once.** A character byte followed by an
+attribute byte *is* a little-endian 16-bit word, so `src/common/UI.C` stores
+cells as words — 2000 stores for a full-screen repaint, not 4000 — and clips
+each rectangle, run or string once on entry instead of bounds-checking every
+cell on the way past. On a 16-bit ISA card that is the difference between one
+bus cycle per cell and two, on the one code path every screen in the suite is
+drawn through. `ui_putc()` keeps the per-cell test, because a single cell is
+all it draws. `tests/unit/test_ui.c` holds the primitives to the output of the
+per-cell version they replaced.
+
+Note what this does *not* mean: `CASTMARK`'s video benchmark deliberately does
+**not** call the toolkit. It carries its own frozen byte-at-a-time screen fill,
+so that tuning `UI.C` moves the suite's drawing speed without silently moving
+every machine's benchmark score away from the measured 386SX anchor.
+
 **Tiny memory.** The whole screen is about 4 KB at segment `B800:0000`. A
 graphical UI at 640x480 would need roughly 150 KB of planar video memory and a
 matching amount of code to push pixels — memory and bandwidth the SX cannot

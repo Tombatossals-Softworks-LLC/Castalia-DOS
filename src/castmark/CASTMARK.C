@@ -185,6 +185,13 @@ static void dos_version(int *major, int *minor)
 #define BAR_X     4
 #define BAR_W     72
 
+/* 'out' must hold FMT_VALUE_MAX: a full-width long is 11 characters, and
+ * the scr/s form prints two of them either side of a point plus the unit.
+ * This is a benchmark - the whole point is that it runs on machines
+ * nobody has measured yet - so the buffer is sized for what the format
+ * can produce, not for what a 386SX produces. */
+#define FMT_VALUE_MAX 32
+
 static void fmt_value(int idx, long v, char *out)
 {
     if (v < 0) {
@@ -214,7 +221,7 @@ static void fmt_ratio(long rf, char *out)
 static void draw_mark(int i)
 {
     int ny = 3 + i * 2;
-    char buf[40], val[24];
+    char buf[64], val[FMT_VALUE_MAX];
     long v = results[i];
     int pm;
 
@@ -555,14 +562,46 @@ static long bench_mem(void)
     return kbps(bytes, el);
 }
 
+/* The video benchmark's workload, defined HERE and nowhere else.
+ *
+ * It used to call ui_fill().  That made the score a measurement of two
+ * things at once - the machine's video bandwidth AND whatever the shared
+ * toolkit's fill routine happened to look like that release - so tuning
+ * UI.C silently moved every machine's score and quietly invalidated
+ * bench_base[3], the 20.1 screens/s measured on the reference 386SX.  It
+ * duly did: UI.C now writes cell WORDS, which is roughly twice the fill
+ * rate for the same machine.
+ *
+ * So the benchmark carries its own copy of the workload, frozen: one
+ * byte-at-a-time pass over the 4000 bytes of B800:0000, which is what
+ * the anchor was measured against.  Scores stay comparable across
+ * releases, and the toolkit is free to get faster.  Do not "simplify"
+ * this back into a ui_fill() call without re-measuring the anchor on the
+ * reference machine.  The cells are volatile so that no compiler can
+ * quietly fuse the two byte stores back into the word store this exists
+ * to avoid measuring. */
+static void vid_fill_screen(char ch, unsigned char attr)
+{
+    volatile unsigned char far *vram =
+        (volatile unsigned char far *)MK_FP(0xB800, 0x0000);
+    unsigned offset = 0;
+    int i;
+
+    for (i = 0; i < SCR_W * SCR_H; i++) {
+        vram[offset]     = (unsigned char)ch;
+        vram[offset + 1] = attr;
+        offset += 2;
+    }
+}
+
 static long bench_vid(void)
 {
     unsigned long t0 = ui_ticks();
     long el = 0, fills = 0;
 
     do {
-        ui_fill(0, 0, SCR_W, SCR_H, (char)((fills & 1) ? 0xB1 : 0xB0),
-                (fills & 1) ? A_DESKTOP : UI_ATTR(C_DGRAY, C_BLUE));
+        vid_fill_screen((char)((fills & 1) ? 0xB1 : 0xB0),
+                        (fills & 1) ? A_DESKTOP : UI_ATTR(C_DGRAY, C_BLUE));
         fills++;
         el = ticks_since(t0);
         if ((fills & 3) == 0)

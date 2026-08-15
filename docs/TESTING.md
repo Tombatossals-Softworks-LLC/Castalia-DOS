@@ -9,7 +9,8 @@ emulator and at least one piece of real 386-class hardware.
 
 > **CI automation:** a four-stage pipeline runs on every push
 > (`.github/workflows/ci.yml`): the repository gate (`scripts/check.sh`),
-> host unit tests on the real INI module (`scripts/test-unit.sh`), the real
+> host unit tests on the real INI, SPK, UI and CASTLINK modules
+> (`scripts/test-unit.sh`), the real
 > Open Watcom build of all tools with MZ verification
 > (`scripts/verify-exes.sh`), and an E2E stage that fetches the FreeDOS
 > payload (`scripts/fetch-payload.sh`), runs `SMOKE.EXE` inside headless
@@ -49,6 +50,7 @@ The tiers are not simply "more realistic" as you go down — they answer
 | Does the image boot at all? | **QEMU / DOSBox-X** | Same. |
 | Does `CASTLINK` really move a file over a null modem? | **QEMU**, two instances joined by a socket (`-serial tcp:...`) | The UART is emulated faithfully enough for the protocol; only signal timing at 115200 needs metal. |
 | Does `UNDEL` find and rebuild a deleted file? | **QEMU** with a prepared FAT12 image | The FAT is data; no timing involved. |
+| Does the shared UI toolkit paint the right cells? | **Host unit test** — `tests/unit/test_ui.c` | It is pure arithmetic on a 4 KB array. The test aims `UI.C` at an ordinary buffer (`UI_VRAM_BASE`) and diffs every primitive against the per-cell implementation the word-write version replaced, including the off-screen and degenerate cases. Nothing below this tier can *look* at a text screen, so an emulator would only prove the tool did not crash. |
 | Does the PC speaker sound at the right FREQUENCIES? | **DOSBox-X**, `scripts/test-speaker.sh` | SDL's disk audio driver captures the emulated speaker to a file, and the tones are measured out of the samples. This reaches the 8253 divisor arithmetic, which the host tests cannot: there the port writes compile to no-ops. |
 | Does the PC speaker sound *good* — volume, timbre, a real cone? | **86Box** (audible), metal for final | Measuring a frequency is not listening to it. |
 | Does `CDPLAYER` read a table of contents and play the RIGHT track? | **DOSBox-X**, `scripts/test-cdaudio.sh` | It provides MSCDEX and mounts CUE/BIN with audio tracks, and SDL's disk audio driver captures what plays. A generated disc has a different pure tone per track, so measuring the output proves *which* track played — a wrong Red Book address reports success and sounds the wrong track. |

@@ -70,7 +70,17 @@ now holds a real run on an 86Box machine configured to match the reference
 That machine therefore scores exactly 100 by construction. The disk anchor
 is the least transferable of the five — it is an emulated IDE image, and a
 real drive or a CompactFlash card will differ — so it is the one to
-re-measure on metal. A machine with no coprocessor **skips** the FPU
+re-measure on metal.
+
+**The video benchmark owns its workload.** It used to call the shared
+`ui_fill()`, which made the score a measurement of the machine *and* of
+whatever the toolkit happened to look like that release: when `UI.C` moved to
+16-bit cell writes, every machine's video score would have roughly doubled and
+the 20.1 screens/s anchor would have quietly stopped meaning anything.
+`bench_vid()` now carries its own frozen byte-at-a-time fill of `B800:0000`,
+which is what the anchor was measured against, so scores stay comparable
+across releases and the toolkit is free to get faster. Folding it back into a
+`ui_fill()` call means re-measuring the anchor on the reference machine. A machine with no coprocessor **skips** the FPU
 benchmark rather than scoring zero, so the index there is the geometric
 mean of the other four and stays comparable.
 

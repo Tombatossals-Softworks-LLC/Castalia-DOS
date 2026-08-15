@@ -108,6 +108,7 @@ typedef struct {
 static DENT dents[MAX_DEL];
 static int  n_del = 0;              /* entries stored                     */
 static int  n_found = 0;            /* entries seen (may exceed n_del)    */
+static int  n_badsec = 0;           /* root sectors that would not read   */
 
 static unsigned char secbuf[SECSIZE];           /* boot / directory sector */
 static unsigned char fatbuf[SECSIZE * 2u];      /* 2-sector FAT window     */
@@ -641,49 +642,88 @@ static void judge(DENT *d)
     strcpy(d->note, "good - contiguous and unoverwritten");
 }
 
+/* Harvest the deleted entries out of one directory sector. */
+static void scan_sector(const unsigned char *sp)
+{
+    unsigned off;
+
+    for (off = 0u; off + 32u <= bytes_per_sec; off += 32u) {
+        const unsigned char *e = sp + off;
+        if (e[0] != 0xE5u)
+            continue;                   /* only deleted slots          */
+        if (e[11] == 0x0Fu)
+            continue;                   /* long-filename fragment      */
+        if (e[11] & 0x08u)
+            continue;                   /* volume label                */
+        n_found++;
+        if (n_del >= MAX_DEL)
+            continue;                   /* list full; keep counting    */
+        memset(&dents[n_del], 0, sizeof(DENT));
+        build_name(e, dents[n_del].name);
+        dents[n_del].attr  = e[11];
+        dents[n_del].time  = get16(e + 22);
+        dents[n_del].date  = get16(e + 24);
+        dents[n_del].first = get16(e + 26);
+        dents[n_del].size  = get32(e + 28);
+        judge(&dents[n_del]);
+        n_del++;
+    }
+}
+
 /* Scan every 32-byte slot of the root directory for 0xE5 entries.  We do
  * NOT stop at the first 0x00 "never used" slot: it costs a few sectors to
  * read the whole fixed-size root, and deleted entries can sit beyond it.
- * Returns 0 on success, -1 on a read error, -2 when the user pressed Esc. */
+ *
+ * The root is read in 8 KB runs through iobuf rather than one sector per
+ * INT 21h call - a 512-entry root is 32 sectors, so that is two DOS calls
+ * instead of thirty-two, and on a diskette the difference is audible.
+ *
+ * A run that fails is RE-READ SECTOR BY SECTOR, and the sectors that
+ * still will not come back are skipped rather than abandoning the scan.
+ * This is a rescue tool pointed at disks that are already in trouble: one
+ * bad sector in the root used to cost the user every entry behind it.
+ * n_badsec carries the count to the list screen so the shortfall is
+ * stated rather than hidden.
+ *
+ * Returns 0 on success, -1 when nothing at all could be read, -2 when the
+ * user pressed Esc. */
 static int scan_root(void)
 {
     unsigned long sec;
-    unsigned off;
-    int rc;
+    unsigned      chunk, s;
+    int           any = 0;
 
     n_del = 0;
     n_found = 0;
-    for (sec = 0UL; sec < root_secs; sec++) {
+    n_badsec = 0;
+    for (sec = 0UL; sec < root_secs; sec += (unsigned long)chunk) {
         if (abort_pressed())
             return -2;
-        rc = disk_read(root_start + sec, 1u, secbuf);
-        if (rc != 0)
-            return -1;
-        ui_hbar(4, 12, 72, permille(sec + 1UL, root_secs),
-                A_TITLE, A_HINT);
-        for (off = 0u; off + 32u <= bytes_per_sec; off += 32u) {
-            const unsigned char *e = secbuf + off;
-            if (e[0] != 0xE5u)
-                continue;                   /* only deleted slots          */
-            if (e[11] == 0x0Fu)
-                continue;                   /* long-filename fragment      */
-            if (e[11] & 0x08u)
-                continue;                   /* volume label                */
-            n_found++;
-            if (n_del >= MAX_DEL)
-                continue;                   /* list full; keep counting    */
-            memset(&dents[n_del], 0, sizeof(DENT));
-            build_name(e, dents[n_del].name);
-            dents[n_del].attr  = e[11];
-            dents[n_del].time  = get16(e + 22);
-            dents[n_del].date  = get16(e + 24);
-            dents[n_del].first = get16(e + 26);
-            dents[n_del].size  = get32(e + 28);
-            judge(&dents[n_del]);
-            n_del++;
+
+        chunk = IOSECS;
+        if ((unsigned long)chunk > root_secs - sec)
+            chunk = (unsigned)(root_secs - sec);
+
+        if (disk_read(root_start + sec, chunk, iobuf) == 0) {
+            for (s = 0u; s < chunk; s++)
+                scan_sector(iobuf + (unsigned)s * bytes_per_sec);
+            any = 1;
+        } else {
+            /* Narrow the damage down to the sectors that really fail. */
+            for (s = 0u; s < chunk; s++) {
+                if (disk_read(root_start + sec + (unsigned long)s, 1u,
+                              secbuf) == 0) {
+                    scan_sector(secbuf);
+                    any = 1;
+                } else {
+                    n_badsec++;
+                }
+            }
         }
+        ui_hbar(4, 12, 72, permille(sec + (unsigned long)chunk, root_secs),
+                A_TITLE, A_HINT);
     }
-    return 0;
+    return any ? 0 : -1;
 }
 
 /* --- Destination handling ----------------------------------------------- */
@@ -929,7 +969,12 @@ static void draw_list(int sel, int top)
             'A' + src_drive, is_fat12 ? "FAT12" : "FAT16",
             sec_per_clus, clus_bytes, total_clus);
     ui_putlim(2, 2, line, 59, UI_ATTR(C_YELLOW, C_BLUE));
-    if (n_found > n_del) {
+    if (n_badsec > 0) {
+        /* Entries may be missing, and the user has to know which way the
+         * list errs: short, never invented. */
+        sprintf(line, "%d root sector(s) bad", n_badsec);
+        ui_putlim(62, 2, line, 17, A_WARN);
+    } else if (n_found > n_del) {
         /* Say plainly that the list could not hold everything. */
         sprintf(line, "%d found, %d shown", n_found, n_del);
         ui_putlim(62, 2, line, 17, A_WARN);
@@ -993,66 +1038,81 @@ static int recover_one(const DENT *d, const char *path,
     unsigned long clus = (unsigned long)d->first;
     unsigned long fdone = 0UL;
     unsigned long lba;
-    unsigned s, n;
+    unsigned long avail;                /* sectors left before volume end */
+    unsigned long want;                 /* sectors the tail still needs   */
     unsigned long bytes;
+    unsigned n;
     long el;
     int truncated = 0;
     char buf[64];
 
     /* judge() never lets a bogus start cluster be tagged, but never do
      * (clus - 2) arithmetic on one anyway. */
-    if (d->size == 0UL || (unsigned long)d->first < 2UL)
+    if (d->size == 0UL || clus < 2UL || clus > max_clus)
         return -1;
 
     fp = fopen(path, "wb");             /* DESTINATION drive only */
     if (fp == NULL)
         return -2;
 
+    /* The whole point of this tool is that a recoverable file is a
+     * CONTIGUOUS run of clusters, so it is also a contiguous run of
+     * SECTORS: read it in 8 KB strides straight through the cluster
+     * boundaries instead of restarting the arithmetic at every one.  On a
+     * diskette (one sector per cluster) that is sixteen times fewer DOS
+     * calls for the same bytes.
+     *
+     * Cluster N starts at dataStart + (N-2)*sectorsPerCluster, and the
+     * run may not pass max_clus - past there the file is truncated, which
+     * is reported rather than papered over. */
+    lba   = data_start + (clus - 2UL) * (unsigned long)sec_per_clus;
+    avail = (max_clus - clus + 1UL) * (unsigned long)sec_per_clus;
+
     while (remaining > 0UL) {
-        if (clus > max_clus) {          /* ran off the end of the volume */
+        if (avail == 0UL) {             /* ran off the end of the volume */
             truncated = 1;
             break;
         }
-        /* Cluster N starts at dataStart + (N-2)*sectorsPerCluster. */
-        lba = data_start + (clus - 2UL) * (unsigned long)sec_per_clus;
-        for (s = 0u; s < sec_per_clus && remaining > 0UL; s += n) {
-            n = sec_per_clus - s;
-            if (n > IOSECS)
-                n = IOSECS;
-            if (disk_read(lba + (unsigned long)s, n, iobuf) != 0) {
-                fclose(fp);
-                remove(path);
-                return -1;
-            }
-            bytes = (unsigned long)n * (unsigned long)bytes_per_sec;
-            if (bytes > remaining)
-                bytes = remaining;      /* last chunk: only the real tail */
-            if (fwrite(iobuf, 1, (size_t)bytes, fp) != (size_t)bytes) {
-                fclose(fp);
-                remove(path);
-                return -2;
-            }
-            remaining   -= bytes;
-            fdone       += bytes;
-            *done_total += bytes;
+        want = (remaining + (unsigned long)bytes_per_sec - 1UL)
+               / (unsigned long)bytes_per_sec;
+        n = IOSECS;
+        if ((unsigned long)n > avail) n = (unsigned)avail;
+        if ((unsigned long)n > want)  n = (unsigned)want;
 
-            ui_hbar(4, 14, 72, permille(fdone, d->size), A_TITLE, A_HINT);
-            ui_hbar(4, 17, 72, permille(*done_total, grand),
-                    UI_ATTR(C_LGREEN, C_BLUE), A_HINT);
-            el = (long)(ui_ticks() - t0);
-            if (el > 0L) {
-                sprintf(buf, "%lu KB   %ld KB/s   ",
-                        *done_total / 1024UL,
-                        (long)((*done_total >> 10) * 182L / (el * 10L)));
-                ui_puts(4, 18, buf, A_PANEL);
-            }
-            if (abort_pressed()) {
-                fclose(fp);
-                remove(path);           /* no half files left behind      */
-                return -3;
-            }
+        if (disk_read(lba, n, iobuf) != 0) {
+            fclose(fp);
+            remove(path);
+            return -1;
         }
-        clus++;
+        bytes = (unsigned long)n * (unsigned long)bytes_per_sec;
+        if (bytes > remaining)
+            bytes = remaining;          /* last chunk: only the real tail */
+        if (fwrite(iobuf, 1, (size_t)bytes, fp) != (size_t)bytes) {
+            fclose(fp);
+            remove(path);
+            return -2;
+        }
+        remaining   -= bytes;
+        fdone       += bytes;
+        *done_total += bytes;
+        lba         += (unsigned long)n;
+        avail       -= (unsigned long)n;
+
+        ui_hbar(4, 14, 72, permille(fdone, d->size), A_TITLE, A_HINT);
+        ui_hbar(4, 17, 72, permille(*done_total, grand),
+                UI_ATTR(C_LGREEN, C_BLUE), A_HINT);
+        el = (long)(ui_ticks() - t0);
+        if (el > 0L) {
+            sprintf(buf, "%lu KB   %ld KB/s   ",
+                    *done_total / 1024UL,
+                    (long)((*done_total >> 10) * 182L / (el * 10L)));
+            ui_puts(4, 18, buf, A_PANEL);
+        }
+        if (abort_pressed()) {
+            fclose(fp);
+            remove(path);               /* no half files left behind      */
+            return -3;
+        }
     }
     fclose(fp);
     return truncated ? 1 : 0;
@@ -1070,7 +1130,12 @@ static void recover_tagged(void)
 {
     int i, tf, done = 0, trunc = 0, errors = 0, renamed = 0;
     unsigned long tb, done_total = 0UL, t0;
-    char path[128], buf[80];
+    /* The closing summary formats five numbers into one line; at 80 bytes
+     * it had about three to spare against a wide byte count and a fast
+     * drive.  The display is clipped to 70 columns either way, and a
+     * smashed stack in the middle of a recovery is the worst moment for
+     * one, so the buffer is sized for the widest the format can produce. */
+    char path[128], buf[128];
     long el;
 
     tag_totals(&tf, &tb);

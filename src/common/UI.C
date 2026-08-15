@@ -7,6 +7,19 @@
  * See UI.H for the interface.  Uses direct writes to colour text video
  * memory at B800:0000 (VGA), the BIOS video service (INT 10h) for the
  * cursor, and the BIOS keyboard service (INT 16h) for input.  C89.
+ *
+ * HOW THE CELLS ARE WRITTEN
+ * -------------------------
+ * A text cell is a character byte followed by an attribute byte, so a
+ * cell is exactly one little-endian 16-bit word and the whole screen is
+ * 2000 words.  Everything here writes WORDS, never byte pairs: on a
+ * 386SX with a 16-bit ISA video card that halves the bus cycles for
+ * every fill, string and box the suite draws, and there is no primitive
+ * that ever wants to touch a character without its attribute.
+ *
+ * Clipping is done ONCE per call, on the rectangle or the run, rather
+ * than per cell.  ui_putc() keeps the per-cell test because a single
+ * cell is all it draws.
  * =================================================================== */
 
 #include <dos.h>
@@ -34,14 +47,30 @@
 #define CH_DBL  (char)0xC8   /* double bot-left   */
 #define CH_DBR  (char)0xBC   /* double bot-right  */
 
-/* Base of colour text video RAM.  Set in ui_init(). */
-static unsigned char far *ui_vram = (unsigned char far *)0;
+/* Base of colour text video RAM.  A macro so the host unit test can aim
+ * the toolkit at an ordinary array and check what it drew; nothing but
+ * tests/unit/test_ui.c ever defines it. */
+#ifndef UI_VRAM_BASE
+#define UI_VRAM_BASE MK_FP(0xB800, 0x0000)
+#endif
+
+/* The screen as 2000 cell words.  Set in ui_init(). */
+static unsigned short far *ui_cells = (unsigned short far *)0;
+
+/* Character byte low, attribute byte high - the layout of a text cell. */
+#define UI_CELL(ch, attr) \
+    ((unsigned short)((unsigned short)(unsigned char)(ch) \
+                      | ((unsigned short)(attr) << 8)))
+
+/* Address of a cell.  Callers clip first: y*80+x tops out at 1999, so
+ * the index stays inside an unsigned int on a 16-bit build. */
+#define UI_AT(x, y)  (ui_cells + (unsigned)(y) * SCR_W + (unsigned)(x))
 
 /* --- Lifecycle ------------------------------------------------------ */
 
 void ui_init(void)
 {
-    ui_vram = (unsigned char far *)MK_FP(0xB800, 0x0000);
+    ui_cells = (unsigned short far *)UI_VRAM_BASE;
     ui_cursor(0);
 }
 
@@ -55,12 +84,9 @@ void ui_done(void)
 
 static void put_cell(int x, int y, char ch, unsigned char attr)
 {
-    unsigned offset;
     if (x < 0 || x >= SCR_W || y < 0 || y >= SCR_H)
         return;
-    offset = (unsigned)((y * SCR_W + x) << 1);
-    ui_vram[offset]     = (unsigned char)ch;
-    ui_vram[offset + 1] = attr;
+    *UI_AT(x, y) = UI_CELL(ch, attr);
 }
 
 /* --- Drawing -------------------------------------------------------- */
@@ -70,23 +96,58 @@ void ui_putc(int x, int y, char ch, unsigned char attr)
     put_cell(x, y, ch, attr);
 }
 
+void ui_fill(int x, int y, int w, int h, char ch, unsigned char attr)
+{
+    unsigned short far *p;
+    unsigned short cell;
+    int i, j;
+
+    /* Clip the rectangle to the screen once, then write it blind. */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (w > SCR_W - x) w = SCR_W - x;
+    if (h > SCR_H - y) h = SCR_H - y;
+    if (w <= 0 || h <= 0 || x >= SCR_W || y >= SCR_H)
+        return;
+
+    cell = UI_CELL(ch, attr);
+    p    = UI_AT(x, y);
+    for (j = 0; j < h; j++) {
+        for (i = 0; i < w; i++)
+            p[i] = cell;
+        p += SCR_W;
+    }
+}
+
 void ui_cls(unsigned char attr)
 {
-    int i;
-    unsigned offset = 0;
-    for (i = 0; i < SCR_W * SCR_H; i++) {
-        ui_vram[offset]     = (unsigned char)' ';
-        ui_vram[offset + 1] = attr;
-        offset += 2;
-    }
+    ui_fill(0, 0, SCR_W, SCR_H, ' ', attr);
 }
 
 void ui_putlim(int x, int y, const char *s, int maxlen, unsigned char attr)
 {
+    unsigned short far *p;
+    unsigned short hi;
     int i = 0;
-    while (s[i] != '\0' && i < maxlen && (x + i) < SCR_W) {
-        put_cell(x + i, y, s[i], attr);
+
+    if (y < 0 || y >= SCR_H || x >= SCR_W || maxlen <= 0)
+        return;
+    /* Characters that fall off the left edge are consumed, not drawn -
+     * they still count against maxlen, exactly as the per-cell version
+     * did when put_cell() dropped them. */
+    while (x < 0 && i < maxlen && s[i] != '\0') {
         i++;
+        x++;
+    }
+    if (x < 0)
+        return;
+
+    hi = (unsigned short)((unsigned short)attr << 8);
+    p  = UI_AT(x, y);
+    while (i < maxlen && x < SCR_W && s[i] != '\0') {
+        *p++ = (unsigned short)(hi | (unsigned short)(unsigned char)s[i]);
+        i++;
+        x++;
     }
 }
 
@@ -95,39 +156,24 @@ void ui_puts(int x, int y, const char *s, unsigned char attr)
     ui_putlim(x, y, s, SCR_W, attr);
 }
 
-void ui_fill(int x, int y, int w, int h, char ch, unsigned char attr)
-{
-    int i, j;
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++)
-            put_cell(x + i, y + j, ch, attr);
-}
-
 void ui_hline(int x, int y, int w, unsigned char attr)
 {
-    int i;
-    for (i = 0; i < w; i++)
-        put_cell(x + i, y, CH_SH, attr);
+    ui_fill(x, y, w, 1, CH_SH, attr);
 }
 
 static void draw_box(int x, int y, int w, int h, unsigned char attr,
                      char tl, char tr, char bl, char br, char hz, char vt)
 {
-    int i;
     if (w < 2 || h < 2)
         return;
     put_cell(x, y, tl, attr);
     put_cell(x + w - 1, y, tr, attr);
     put_cell(x, y + h - 1, bl, attr);
     put_cell(x + w - 1, y + h - 1, br, attr);
-    for (i = 1; i < w - 1; i++) {
-        put_cell(x + i, y, hz, attr);
-        put_cell(x + i, y + h - 1, hz, attr);
-    }
-    for (i = 1; i < h - 1; i++) {
-        put_cell(x, y + i, vt, attr);
-        put_cell(x + w - 1, y + i, vt, attr);
-    }
+    ui_fill(x + 1, y,         w - 2, 1,     hz, attr);
+    ui_fill(x + 1, y + h - 1, w - 2, 1,     hz, attr);
+    ui_fill(x,     y + 1,     1,     h - 2, vt, attr);
+    ui_fill(x + w - 1, y + 1, 1,     h - 2, vt, attr);
 }
 
 void ui_box(int x, int y, int w, int h, unsigned char attr)
@@ -218,7 +264,7 @@ void ui_hbar(int x, int y, int w, int permille,
              unsigned char attr, unsigned char dimattr)
 {
     long total;
-    int full, rem, i;
+    int full, rem;
 
     if (permille < 0)    permille = 0;
     if (permille > 1000) permille = 1000;
@@ -226,8 +272,9 @@ void ui_hbar(int x, int y, int w, int permille,
     full  = (int)(total / 1000L);
     rem   = (int)(total % 1000L);
 
-    for (i = 0; i < full && i < w; i++)
-        ui_putc(x + i, y, (char)0xDB, attr);
+    if (full > w)
+        full = w;
+    ui_fill(x, y, full, 1, (char)0xDB, attr);
     if (full < w && rem > 0) {
         char c;
         if (rem >= 666)      c = (char)0xB2;
@@ -236,8 +283,7 @@ void ui_hbar(int x, int y, int w, int permille,
         ui_putc(x + full, y, c, attr);
         full++;
     }
-    for (i = full; i < w; i++)
-        ui_putc(x + i, y, (char)0xFA, dimattr);
+    ui_fill(x + full, y, w - full, 1, (char)0xFA, dimattr);
 }
 
 #define UI_ED_ATTR UI_ATTR(C_WHITE, C_BLACK)
@@ -245,15 +291,16 @@ void ui_hbar(int x, int y, int w, int permille,
 int ui_editline(char *buf, int maxlen, int x, int y, int w)
 {
     int len = (int)strlen(buf);
-    int cur = len, off = 0, k, i;
+    int cur = len, off = 0, k;
 
     ui_cursor(1);
     for (;;) {
         if (cur < off)      off = cur;
         if (cur >= off + w) off = cur - w + 1;
         ui_fill(x, y, w, 1, ' ', UI_ED_ATTR);
-        for (i = 0; i < w && (off + i) < len; i++)
-            ui_putc(x + i, y, buf[off + i], UI_ED_ATTR);
+        /* buf is NUL-terminated at len, so putlim stops at the same place
+         * the old per-character loop did. */
+        ui_putlim(x, y, buf + off, w, UI_ED_ATTR);
         ui_gotoxy(x + (cur - off), y);
         k = ui_getkey();
         if (k == KEY_ENTER) { ui_cursor(0); return 1; }
