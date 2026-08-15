@@ -1,0 +1,40 @@
+THE CONFIG.SYS GUIDE
+====================
+
+CONFIG.SYS is the first file DOS reads at boot. In CASTALIA DOS it
+holds the boot MENU and the driver lines for all eight profiles.
+
+The menu is made of MENU lines. Any line whose text starts with a
+number becomes a selectable entry:
+
+   MENUCOLOR=7,1               white on blue; also draws the bar
+   MENUDEFAULT=2,10            entry 2 preselected, 10-second timeout
+   MENU      1. Maximum Compatibility ...
+   MENU      2. XMS Gaming ..............
+   ... (eight entries)
+
+Driver lines are tagged with the entry they belong to. A line that
+starts with digits and a question mark runs ONLY for those entries;
+a line with no tag runs for every entry:
+
+   1234568?DEVICE=C:\DOS\HIMEMX.EXE      all profiles except Safe Mode
+   2?DEVICE=C:\DOS\JEMM386.EXE NOEMS     entry 2 only: UMBs, no EMS
+   345?DEVICE=C:\DOS\JEMM386.EXE FRAME=E000   entries 3, 4 and 5
+   2345?DOS=HIGH,UMB                     DOS in the HMA, UMBs on
+   FILES=30                              untagged: every profile
+
+This is the FreeDOS kernel's own menu syntax. It is NOT the MS-DOS
+one: there is no [MENU] section, no MENUITEM and no named [blocks],
+and writing them has no effect at all - every driver line would then
+load on every boot.
+
+The kernel puts the entry NUMBER you chose in the variable %CONFIG%
+("1" to "8"). AUTOEXEC.BAT turns that into the profile name.
+
+To edit CONFIG.SYS safely, use CFGEDIT from the Castalia menu, or any
+text editor. ALWAYS keep a backup - the "Backup System Config" menu
+item copies it to C:\CASTALIA\BACKUP. If a change breaks the boot,
+pick Safe Mode and run SAFEBOOT to restore it. Holding F5 at boot
+skips CONFIG.SYS entirely, which is the other way back in.
+
+See also: HELP AUTOEXEC   HELP RECOVERY

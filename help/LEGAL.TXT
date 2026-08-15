@@ -1,0 +1,19 @@
+LEGAL AND LICENSES
+==================
+
+CASTALIA DOS is built on FreeDOS and other open-source software, plus
+original Castalia tools and documentation.
+
+ * The DOS core (kernel and shell) is FreeDOS, licensed under the GNU
+   General Public License. Its source is included with this release.
+
+ * The Castalia tools are original work under the MIT license.
+
+ * The documentation is licensed CC BY 4.0.
+
+ * CASTALIA DOS contains no Microsoft code, text, or branding. It is
+   not MS-DOS and is not affiliated with Microsoft.
+
+Full license texts are in C:\CASTALIA\HELP\LICENSES and in the
+LICENSES folder of the source release. See "docs/LICENSE-STRATEGY.md"
+in the source for details.

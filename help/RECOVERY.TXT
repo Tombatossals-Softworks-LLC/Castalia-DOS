@@ -1,0 +1,20 @@
+RECOVERY GUIDE
+==============
+
+If the machine will not boot, or a change broke something:
+
+ * At the boot menu, pick 7 (Safe Mode). It loads no drivers and
+   almost always starts. From the prompt you can run:
+      SAFEBOOT   restore a known-good CONFIG.SYS / AUTOEXEC.BAT
+      CFGEDIT    edit the boot files safely
+      HWINFO     check what the machine sees
+
+ * If even Safe Mode will not start, boot the CASTALIA DOS emergency
+   floppy. Then run SAFEBOOT to restore your files from
+   C:\CASTALIA\BACKUP, or re-make the disk bootable with SYS C:.
+
+ * Your CONFIG.SYS and AUTOEXEC.BAT are backed up automatically by
+   Setup and by the "Backup System Config" menu item. Restores come
+   from C:\CASTALIA\BACKUP.
+
+Nothing in recovery touches your games or data in C:\GAMES.

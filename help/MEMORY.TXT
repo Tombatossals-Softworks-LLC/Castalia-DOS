@@ -1,0 +1,28 @@
+MEMORY TROUBLESHOOTING
+======================
+
+Symptom: a game says "not enough memory" or refuses to start.
+
+1. Check how much you have. At the prompt type:
+      MEM /C /P
+   Look at "Largest executable program size". That is what the game
+   can use. Compare it to what the game needs.
+
+2. Use a leaner profile. Reboot and pick:
+      1 CLEAN  - loads the least, frees the most
+      2 XMS    - almost as much free memory, plus a mouse
+   Avoid EMS and CD-ROM profiles unless the game needs them; their
+   page frame and drivers use memory.
+
+3. Free the sound TSR. If you do not need sound for setup, a leaner
+   profile skips it.
+
+Symptom: a game wants EMS ("expanded memory").
+   Reboot and pick 3 (EMS). That profile provides a 64 KB EMS page
+   frame. Switch back to XMS afterwards for other games.
+
+Symptom: a game misbehaves with a memory manager.
+   Pick 1 (CLEAN) or, as a last resort, 7 (SAFE), which loads no
+   memory manager at all.
+
+See also: HELP PROFILES   HELP PROBLEMS

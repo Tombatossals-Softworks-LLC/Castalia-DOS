@@ -1,0 +1,34 @@
+COMMON GAME PROBLEMS
+====================
+
+"Not enough memory" / game will not start
+   Use a leaner profile (1 CLEAN or 2 XMS) and check with MEM /C.
+   See HELP MEMORY.
+
+"EMS memory required"
+   Reboot and pick 3 (EMS).
+
+No sound, or the wrong kind of sound
+   Check the BLASTER line and the game's own setup. See HELP SOUND.
+   Remember: "AdLib" = music only; "Sound Blaster" = music + digital
+   voices/effects.
+
+Game runs far too fast (or crashes on a fast machine)
+   Some old games have no speed limit and were tuned for an 8 MHz PC.
+   On a 386/486 they can be unplayably fast. Use a slowdown utility,
+   or the game's own speed setting if it has one. This is a property
+   of the game, not of CASTALIA DOS.
+
+Game is a slideshow on a 386SX
+   Texture-mapped and 1993+ action games (Doom, Duke Nukem 3D) need a
+   fast 486 or better. A 386SX simply cannot push those frame rates.
+   See the compatibility guide for which titles suit which CPU.
+
+Mouse does not work
+   Use a profile that loads it (XMS). See HELP MOUSE.
+
+CD game cannot find the CD
+   Boot the CDROM profile (4). See HELP CDROM.
+
+If all else fails, boot SAFE mode (7) and run the game with the most
+memory and the fewest drivers.

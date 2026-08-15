@@ -1,0 +1,27 @@
+CONFIGURING THE MOUSE
+=====================
+
+CASTALIA DOS uses CTMOUSE, a small, reliable mouse driver that works
+with both serial mice (on COM1/COM2) and PS-2 mice. It is loaded for
+you in the XMS, EMS, CDROM, and WIN3X profiles. The CLEAN and SAFE
+profiles do NOT load it, to save memory.
+
+The mouse is always optional in CASTALIA DOS: every Castalia tool
+works from the keyboard alone. Many games need a mouse (adventures,
+strategy); action games usually do not.
+
+If the mouse does not work:
+
+ * Boot a profile that loads it (XMS is the default and does).
+ * For a serial mouse, make sure it is on COM1 or COM2 and that no
+   other device claims that port.
+ * Some very old serial mice need a moment after power-on; try
+   reloading the driver:  CTMOUSE
+
+To load the mouse by hand at a prompt:
+   C:\CASTALIA\DRV\CTMOUSE.EXE
+
+To check whether a mouse driver is present, run HWINFO (Castalia menu
+item 6); it reports the mouse driver status.
+
+See also: HELP PROFILES

@@ -1,0 +1,7 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Upstream licence texts are stored byte-for-byte.  CWSDPMI's own licence
+# says it "must be distributed verbatim", and LF normalisation would alter
+# it; the same rule keeps every vendored licence hashable against upstream.
+LICENSES/*.txt -text

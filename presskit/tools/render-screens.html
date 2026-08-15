@@ -1,0 +1,147 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  body{margin:0;background:#111;font-family:"DejaVu Sans Mono","Liberation Mono",monospace}
+  .frame{display:inline-block;background:#0000AA;padding:16px 18px;line-height:0}
+  .frame.black{background:#000}
+  .screen{font-size:19px;line-height:1.16;white-space:pre;font-weight:700;letter-spacing:0}
+  .row{display:block}
+  /* logo canvases */
+  .logo{display:inline-block;padding:22px}
+  .logo.onblue{background:#0000AA}
+  .logo.ondark{background:#0b0b10}
+  .logo .screen{font-size:22px}
+  .wrap{padding:20px}
+</style></head><body><div class="wrap" id="wrap"></div>
+<script>
+const VGA=['#000000','#0000AA','#00AA00','#00AAAA','#AA0000','#AA00AA','#AA5500',
+'#AAAAAA','#555555','#5555FF','#55FF55','#55FFFF','#FF5555','#FF55FF','#FFFF55','#FFFFFF'];
+const W=80,H=25;
+function Screen(bg){this.bg=(bg===undefined)?1:bg;this.cells=[];
+  for(let y=0;y<H;y++){const r=[];for(let x=0;x<W;x++)r.push({c:' ',f:7,b:this.bg});this.cells.push(r);}}
+Screen.prototype.put=function(x,y,c,f,b){if(x<0||x>=W||y<0||y>=H)return;const e=this.cells[y][x];e.c=c;e.f=f;if(b!==undefined)e.b=b;};
+Screen.prototype.puts=function(x,y,s,f,b){for(let i=0;i<s.length;i++)this.put(x+i,y,s[i],f,b);};
+Screen.prototype.center=function(y,s,f,b){this.puts(Math.floor((W-s.length)/2),y,s,f,b);};
+Screen.prototype.fill=function(x,y,w,h,c,f,b){for(let j=0;j<h;j++)for(let i=0;i<w;i++)this.put(x+i,y+j,c,f,b);};
+Screen.prototype.box=function(x,y,w,h,f,b,dbl){const T=dbl?'╔╗╚╝║═':'┌┐└┘│─';
+  this.put(x,y,T[0],f,b);this.put(x+w-1,y,T[1],f,b);this.put(x,y+h-1,T[2],f,b);this.put(x+w-1,y+h-1,T[3],f,b);
+  for(let i=1;i<w-1;i++){this.put(x+i,y,T[5],f,b);this.put(x+i,y+h-1,T[5],f,b);}
+  for(let j=1;j<h-1;j++){this.put(x,y+j,T[4],f,b);this.put(x+w-1,y+j,T[4],f,b);}};
+const KEEP=["       |P             |P             |P","       |              |              |",
+"       |              |              |","    M M M M      M M M M M M      M M M M",
+"    #######      ###########      #######","    #o#o#o#M M M #o#o#o#o#o#M M M #o#o#o#",
+"    #####################################","    ########o####o#o#ooo#o#o####o########",
+"    #################GGG#################","    ################GGGGG################",
+"    ::::::::::::::::GGGGG::::::::::::::::","  _________________________________________"];
+const MARK=["    |P     |P     |P","   M M   M M M   M M","   ###   #####   ###",
+"   ###   ##o##   ###","   ########G########","   #######GGG#######","  ___________________"];
+const KC={'#':['█',7],'M':['█',14],'o':['■',14],'G':['█',8],':':['▓',8],'_':['▄',7],'|':['│',7],'P':['█',14],' ':[' ',7]};
+function drawArt(s,art,x0,y0){for(let r=0;r<art.length;r++){const row=art[r];
+  for(let i=0;i<row.length;i++){const m=KC[row[i]]||[' ',7];if(row[i]!==' ')s.put(x0+i,y0+r,m[0],m[1],1);}}}
+const FONT={'A':[" ### ","#   #","#####","#   #","#   #"],'B':["#### ","#   #","#### ","#   #","#### "],
+'C':["#####","#    ","#    ","#    ","#####"],'D':["#### ","#   #","#   #","#   #","#### "],
+'E':["#####","#    ","#### ","#    ","#####"],'G':["#####","#    ","#  ##","#   #","#####"],
+'I':["#####","  #  ","  #  ","  #  ","#####"],'L':["#    ","#    ","#    ","#    ","#####"],
+'N':["#   #","##  #","# # #","#  ##","#   #"],'O':[" ### ","#   #","#   #","#   #"," ### "],
+'R':["#### ","#   #","#### ","#  # ","#   #"],'S':["#####","#    ","#####","    #","#####"],
+'T':["#####","  #  ","  #  ","  #  ","  #  "],' ':["     ","     ","     ","     ","     "]};
+function bigW(t){return t.length*6-1;}
+function drawBig(s,x,y,t,f){let cx=x;for(const ch of t){const g=FONT[ch]||FONT[' '];
+  for(let r=0;r<5;r++)for(let i=0;i<5;i++)s.put(cx+i,y+r,g[r][i]==='#'?'█':' ',f,1);cx+=6;}}
+function drawBigC(s,y,t,f){drawBig(s,Math.floor((W-bigW(t))/2),y,t,f);}
+const STARS=[[4,2,0],[10,5,1],[6,8,0],[14,3,0],[3,6,1],[75,2,0],[69,5,1],[73,8,0],[66,3,0],[77,7,1]];
+function drawStars(s){for(const st of STARS)s.put(st[0],st[1],'·',st[2]?15:8,1);}
+const KX=Math.floor((W-43)/2),MKX=Math.floor((W-21)/2);
+
+function scrBoot(){const s=new Screen(1);drawArt(s,KEEP,KX,0);drawStars(s);drawBigC(s,13,"CASTALIA DOS",14);
+  s.center(19,"386SX Edition   -   1.0  \"Tombatossals\"",15);s.center(20,"a Tombatossals Softworks product",7);
+  s.center(21,"Dave Abellan  ·  Claudio di Castello",8);s.center(22,"profile: XMS",8);s.center(23,"the fortress holds",8);return s;}
+function scrRescue(){const s=new Screen(1);drawArt(s,KEEP,KX,0);drawStars(s);drawBigC(s,12,"CASTALIA DOS",14);
+  const bx=8,by=17,bw=W-16;s.box(bx,by,bw,7,15,1,false);s.puts(bx+2,by," Rescue & Install Disk ",14,1);
+  s.puts(bx+3,by+1,"SETUP     install CASTALIA DOS to the hard disk",7,1);
+  s.puts(bx+3,by+2,"SAFEBOOT  repair an installed system's boot files",7,1);
+  s.puts(bx+3,by+3,"HWINFO    inspect this machine",7,1);
+  s.puts(bx+3,by+4,"FDISK  FORMAT  SYS  CHKDSK   live in A:\\DOS",8,1);
+  s.puts(bx+3,by+5,"Type a command and press Enter.",11,1);s.puts(0,24,"A:\\>",7,1);return s;}
+function scrWelcome(){const s=new Screen(1);drawArt(s,KEEP,KX,0);drawBigC(s,12,"CASTALIA DOS",14);
+  s.center(17,"S E T U P    -    386SX Edition 1.0  \"Tombatossals\"",15);
+  s.center(18,"a Tombatossals Softworks product",8);
+  s.center(19,"Installs CASTALIA DOS on a hard disk or CompactFlash card,",7);
+  s.center(20,"tuned for real 386-class machines and the games they run.",7);
+  s.center(21,"It backs up anything it replaces and changes nothing until you confirm.",8);
+  s.center(23,"[ Enter ] Continue                    [ Esc ] Exit",11);return s;}
+function scrInstalled(){const s=new Screen(1);drawBigC(s,1,"CASTALIA DOS",14);drawBigC(s,7,"INSTALLED",10);
+  s.center(12,"a Tombatossals Softworks product",7);
+  const bx=8,by=13,bw=W-16,bh=11;s.fill(bx,by,bw,bh,' ',7,1);s.box(bx,by,bw,bh,15,1,false);
+  s.puts(bx+2,by," The keep stands ",14,1);s.puts(bx+3,by+1,"Target ...... C:   (bootable: yes)",7,1);
+  s.puts(bx+3,by+2,"Old config backed up to \\CASTALIA\\BACKUP.",7,1);s.puts(bx+3,by+4,"Next steps:",15,1);
+  s.puts(bx+5,by+5,"1. Remove the install media.",7,1);
+  s.puts(bx+5,by+6,"2. Reboot.  Choose a memory profile at the Castalia gate.",7,1);
+  s.puts(bx+5,by+7,"3. Add games under C:\\GAMES and to GAMES.INI.",7,1);
+  s.puts(bx+3,by+9,"Keep this disk: it is your emergency rescue disk.",11,1);
+  s.center(24,"[ Enter / Esc ]  Exit Setup",8);return s;}
+function scrMenu(){const s=new Screen(1);s.fill(0,0,W,1,' ',14,1);s.puts(2,0,"CASTALIA DOS",14,1);
+  s.puts(55,0,"Sat 2026-07-11",15,1);s.puts(71,0,"14:32:07",14,1);drawArt(s,MARK,MKX,1);s.center(8,"C A S T A L I A   D O S",14,1);
+  s.center(9,"386SX Edition   -   1.0 \"Tombatossals\"",15,1);
+  const items=["1   Launch Games","2   File Manager","3   Text Editor","4   System & Benchmark   ►",
+   "5   Disk Tools           ►","6   Minigames            ►","7   Sound Setup","8   Configuration        ►","9   Help","Q   Exit to Command Line"];
+  const MX=22,MY=11,MW=36;s.box(MX,MY,MW,12,15,1,false);s.puts(MX+2,MY," Main Menu ",14,1);
+  for(let i=0;i<items.length;i++){const sel=(i===0);s.fill(MX+1,MY+1+i,MW-2,1,' ',sel?0:7,sel?14:1);s.puts(MX+2,MY+1+i,items[i],sel?0:7,sel?14:1);}
+  s.fill(0,24,W,1,' ',0,7);s.puts(1,24," Profile: XMS   ▲▼ Move  Enter Select  F1 About  Esc Exit",0,7);return s;}
+function scrAbout(){const s=scrMenu();const w=68,h=19,x=Math.floor((W-w)/2),y=Math.floor((H-h)/2);
+  s.fill(x,y,w,h,' ',0,7);s.box(x,y,w,h,0,7,false);s.fill(x+1,y,w-2,1,' ',15,7);s.puts(x+2,y," About CASTALIA DOS ",15,7);
+  s.puts(x+3,y+2,"CASTALIA DOS 386SX Edition  -  1.0 \"Tombatossals\"",1,7);
+  s.puts(x+3,y+3,"This machine",8,7);s.puts(x+17,y+3,"638 KB base   -   XMS present   -   profile XMS",0,7);
+  s.puts(x+3,y+4,"A DOS-compatible operating environment for real machines.",0,7);
+  s.puts(x+3,y+5,"Presents MS-DOS 6.22-compatible behavior.",0,7);
+  s.puts(x+3,y+7,"A Tombatossals Softworks product.",1,7);
+  s.puts(x+3,y+8,"Created by",8,7);s.puts(x+16,y+8,"Dave Abellan",0,7);
+  s.puts(x+16,y+9,"Claudio di Castello",0,7);
+  s.puts(x+3,y+12,"Built on FreeDOS (GPLv2+) and other free/open software.",0,7);
+  s.puts(x+3,y+13,"Castalia code & branding: MIT.  FreeDOS: GPLv2+ (third_party).",0,7);
+  s.puts(x+3,y+15,"(C) 2026 Tombatossals Softworks.",0,7);
+  s.puts(x+3,y+17,"Press C for the credits roll  -  any other key returns.",8,7);return s;}
+/* Representative frame of the animated credits roll (offset 0: wordmark on
+ * top, the studio line and both creators climbing beneath it). */
+function scrCredits(){const s=new Screen(1);
+  const stx=[6,15,27,52,66,74],sty=[1,2,1,2,1,2];
+  for(let i=0;i<stx.length;i++)s.put(stx[i],sty[i],'·',i===0?15:8,1);
+  drawBigC(s,3,"CASTALIA DOS",14);
+  s.center(9,"386SX Edition   -   1.0  \"Tombatossals\"",15,1);
+  s.center(11,"a Tombatossals Softworks production",7,1);
+  s.center(14,"Created by",14,1);
+  s.center(16,"Dave Abellan",15,1);s.center(17,"creator & programmer",8,1);
+  s.center(19,"Claudio di Castello",15,1);s.center(20,"systems, tools & design",8,1);
+  s.center(23,"Built on the shoulders of",14,1);
+  s.center(24,"Press any key to return to the keep.",8,1);return s;}
+
+/* logo compositions on a smaller canvas */
+function logoFull(){const s=new Screen(1);drawArt(s,KEEP,KX,0);drawBigC(s,13,"CASTALIA DOS",14);
+  s.center(19,"386SX EDITION",15);return {s:s,y0:0,y1:20};}
+function logoWord(){const s=new Screen(1);drawBigC(s,1,"CASTALIA DOS",14);return {s:s,y0:0,y1:7};}
+function logoMark(){const s=new Screen(1);drawArt(s,MARK,MKX,1);s.center(9,"C A S T A L I A   D O S",14,1);return {s:s,y0:0,y1:11};}
+
+function renderRows(s,y0,y1){let html='';for(let y=y0;y<=y1;y++){let line='',run='',pf=-1,pb=-1;
+  const flush=()=>{if(run!==''){const esc=run.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    line+=`<span style="color:${VGA[pf]};background:${VGA[pb]}">${esc}</span>`;run='';}};
+  for(let x=0;x<W;x++){const c=s.cells[y][x];if(c.f!==pf||c.b!==pb){flush();pf=c.f;pb=c.b;}run+=c.c;}flush();
+  html+=`<span class="row">${line}</span>`;}return html;}
+function render(s){return renderRows(s,0,H-1);}
+
+const SHOTS=[
+ ['01-boot-banner',scrBoot(),false],['02-rescue-disk',scrRescue(),false],
+ ['03-installer-welcome',scrWelcome(),false],['04-installed',scrInstalled(),false],
+ ['05-main-menu',scrMenu(),false],['06-about',scrAbout(),false],
+ ['07-credits',scrCredits(),false]];
+const wrap=document.getElementById('wrap');
+for(const [id,s,black] of SHOTS){
+  const d=document.createElement('div');d.className='frame'+(black?' black':'');d.id='shot-'+id;
+  d.innerHTML=`<div class="screen">${render(s)}</div>`;wrap.appendChild(d);
+  wrap.appendChild(document.createTextNode(' '));
+}
+const LOGOS=[['logo-full',logoFull(),'onblue'],['logo-wordmark',logoWord(),'onblue'],['logo-mark',logoMark(),'onblue']];
+for(const [id,o,cls] of LOGOS){
+  const d=document.createElement('div');d.className='logo '+cls;d.id='shot-'+id;
+  d.innerHTML=`<div class="screen">${renderRows(o.s,o.y0,o.y1)}</div>`;wrap.appendChild(d);
+  wrap.appendChild(document.createTextNode(' '));
+}
+window.__ready=true;
+</script></body></html>

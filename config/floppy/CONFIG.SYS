@@ -1,0 +1,19 @@
+REM =====================================================================
+REM  CASTALIA DOS  -  CONFIG.SYS for the BOOT/RESCUE DISKETTE
+REM
+REM  This is NOT the installed system's CONFIG.SYS (that template rides
+REM  along in A:\INSTALL\ and is written to C:\ by SETUP).  A rescue
+REM  diskette must boot fast and never depend on a hard disk, so there
+REM  is no boot menu here and every path is on A:.
+REM =====================================================================
+
+DEVICE=A:\DOS\HIMEMX.EXE
+DOS=HIGH
+REM  CASTALIA=n records the active boot profile in the kernel so tools
+REM  (HWINFO, the CASTALIA menu) can read it back via INT 2Fh AH=0CAh.
+REM  7 = SAFE/rescue.  Ignored harmlessly by a non-CASTALIA kernel.
+CASTALIA=7
+FILES=20
+BUFFERS=15
+LASTDRIVE=M
+SHELL=A:\COMMAND.COM A:\ /E:512 /P

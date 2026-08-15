@@ -1,0 +1,154 @@
+REM =====================================================================
+REM  CASTALIA DOS 386SX Edition  -  CONFIG.SYS
+REM  Boot configuration with 8 memory profiles.
+REM
+REM  Built on the FreeDOS kernel (KERNEL.SYS) and FreeCOM shell
+REM  (COMMAND.COM).  Original Castalia work, no Microsoft code or text.
+REM  Edit with CFGEDIT.EXE or any text editor.
+REM
+REM  ---------------------------------------------------------------
+REM  SYNTAX NOTE - read this before editing.
+REM
+REM  The FreeDOS kernel does NOT implement the MS-DOS multi-config
+REM  syntax.  There is no [MENU] section, no MENUITEM and no [BLOCK]
+REM  headers; the kernel source has no code for them at all.  What it
+REM  does implement is its own, simpler scheme:
+REM
+REM    MENU <text>       a line printed on the boot menu screen.  If
+REM                      the text starts with a digit, that digit is
+REM                      the selectable entry and the line becomes
+REM                      the highlight bar.
+REM    MENUDEFAULT=n,s   entry n is preselected; s seconds to timeout.
+REM    MENUCOLOR=fg,bg   turns the highlight bar on and clears the
+REM                      screen.  It MUST come before the MENU lines.
+REM    n?DIRECTIVE       the directive runs only when entry n was
+REM    12?DIRECTIVE      chosen.  Several digits mean several entries.
+REM                      An unprefixed directive always runs - that is
+REM                      this kernel's equivalent of [COMMON].
+REM
+REM  The kernel exports the chosen digit as the DOS variable %CONFIG%
+REM  ("1".."8", NOT a block name).  AUTOEXEC.BAT turns that digit into
+REM  the readable profile name it branches on.
+REM  ---------------------------------------------------------------
+REM
+REM  Driver locations:
+REM    C:\DOS ............ FreeDOS base + memory managers (HIMEMX, JEMM386)
+REM    C:\CASTALIA\DRV ... Castalia-bundled drivers (mouse, CD-ROM)
+REM
+REM  Missing OPTIONAL drivers only print a skippable error and the boot
+REM  continues; TSRs in AUTOEXEC.BAT are guarded with IF EXIST.
+REM =====================================================================
+
+REM --- Highlight bar: white text (7) on blue (1).  Clears the screen, so
+REM     it has to be the first thing printed.  Keep it above the MENU. ---
+MENUCOLOR=7,1
+
+REM --- Preselect entry 2 (XMS Gaming), auto-boot after 10 seconds ------
+MENUDEFAULT=2,10
+
+MENU
+MENU      CASTALIA DOS 386SX Edition   -   choose a boot profile
+MENU      ---------------------------------------------------------
+MENU
+MENU      1. Maximum Compatibility ... most free conventional RAM
+MENU      2. XMS Gaming .............. HIMEM + UMB, no EMS page frame
+MENU      3. EMS Gaming .............. HIMEM + 64 KB EMS frame + UMB
+MENU      4. CD-ROM Gaming ........... EMS + CD-ROM driver + sound
+MENU      5. Windows 3.x Mode ........ EMS + SmartDrive-style cache
+MENU      6. Diagnostics ............. boot, then run HWINFO
+MENU      7. Safe Mode ............... bare kernel, no drivers
+MENU      8. Command Prompt Only ..... no Castalia menu, straight to DOS
+MENU
+MENU      Arrows or a number, then Enter.  F5 skips CONFIG.SYS entirely.
+MENU
+
+REM =====================================================================
+REM  Always applied, whichever entry is chosen.  Keep it lean so that
+REM  even Safe Mode stays minimal and conventional memory stays high.
+REM =====================================================================
+SHELL=C:\COMMAND.COM C:\ /E:1024 /P
+FILES=30
+BUFFERS=20
+LASTDRIVE=M
+FCBS=4,0
+STACKS=0,0
+
+REM =====================================================================
+REM  CASTALIA=n records the booted profile in the kernel; HWINFO, CASTID
+REM  and the CASTALIA menu read it back via INT 2Fh AH=0CAh (docs/KERNEL.md).
+REM  A stock FreeDOS kernel ignores the directive harmlessly.
+REM =====================================================================
+1?CASTALIA=1
+2?CASTALIA=2
+3?CASTALIA=3
+4?CASTALIA=4
+5?CASTALIA=5
+6?CASTALIA=6
+7?CASTALIA=7
+8?CASTALIA=8
+
+REM =====================================================================
+REM  Memory managers.
+REM
+REM  HIMEMX: every profile except 7 (Safe Mode, which loads nothing).
+REM  JEMM386 NOEMS   on 2: UMBs but no page frame - most conventional RAM.
+REM  JEMM386 FRAME=  on 3,4,5: a 64 KB EMS page frame at E000 as well.
+REM  I=B000-B7FF reclaims the unused monochrome text region for UMBs on
+REM  colour (VGA) systems.  Remove it if a title misbehaves.
+REM =====================================================================
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+2?DEVICE=C:\DOS\JEMM386.EXE NOEMS I=B000-B7FF
+345?DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
+
+REM --- DOS in the HMA; UMBs wherever JEMM386 provides them -------------
+168?DOS=HIGH
+2345?DOS=HIGH,UMB
+7?DOS=LOW
+
+REM =====================================================================
+REM  4. CD-ROM Gaming only: universal IDE/ATAPI CD-ROM driver.
+REM  UIDE.SYS binds the drive to the name CASTLCD1; SHSUCDX in
+REM  AUTOEXEC.BAT then gives it a drive letter (MSCDEX replacement).
+REM
+REM  Switches, and why:
+REM    /N1  handle CD/DVD drives ONLY, never the hard disks.  We want a
+REM         CD-ROM letter, not a new disk driver under the BIOS.
+REM    /N3  run with NO XMS cache.  UIDE's default is a 20 MB XMS cache
+REM         and its smallest is 5 MB; a 4 MB 386SX has ~3 MB of XMS, so
+REM         the default fails outright with "XMS init error" and even
+REM         the smallest cache would eat the XMS games need.  /N3 must
+REM         be loaded with DEVICE, not DEVICEHIGH - UIDE refuses /N3
+REM         from upper memory.
+REM
+REM  On a machine with 16 MB or more, "/S:5 /H" instead of "/N3" buys a
+REM  5 MB CD cache loaded high.  If the drive misbehaves, add /UX to
+REM  turn UltraDMA off and fall back to PIO.
+REM =====================================================================
+4?DEVICE=C:\CASTALIA\DRV\UIDE.SYS /D:CASTLCD1 /N1 /N3
+
+REM =====================================================================
+REM  Profile summary - what each entry ends up with:
+REM
+REM   1 CLEAN   HIMEMX + DOS=HIGH.  No EMM386, no UMBs, no page frame,
+REM             no TSRs.  For cranky real-mode titles that dislike
+REM             memory managers.  Target: ~615 KB free conventional.
+REM   2 XMS     DEFAULT.  HIMEMX + JEMM386 NOEMS + UMBs.  The most free
+REM             conventional memory of any profile with UMBs; XMS
+REM             available.  Doom, Wolf3D, most 1990-1995 titles.
+REM             Target: ~620-631 KB free conventional.
+REM   3 EMS     As XMS but with a 64 KB EMS page frame at E000, for
+REM             EMS-aware titles (Origin/Ultima, some Sierra, larger
+REM             Warcraft maps).  Slightly less conventional memory.
+REM   4 CDROM   EMS base + UIDE.SYS.  SHSUCDX and the sound environment
+REM             are set up in AUTOEXEC.BAT.
+REM   5 WIN3X   EMS base; Windows and WfW are happier with an EMM
+REM             present.  Mouse and disk cache load from AUTOEXEC.BAT.
+REM             Standard mode, and enhanced mode on a 386DX or better.
+REM   6 DIAG    CLEAN base; AUTOEXEC.BAT runs HWINFO.EXE so the machine
+REM             can be inspected without touching the game profiles.
+REM   7 SAFE    Bare kernel and shell.  No memory manager, no drivers,
+REM             no TSRs, DOS stays low.  Use it to recover a machine.
+REM   8 PROMPT  CLEAN base, but AUTOEXEC.BAT drops straight to a bare
+REM             command prompt for power users and scripting.
+REM =====================================================================
+REM --- End of CONFIG.SYS -----------------------------------------------

@@ -1,0 +1,29 @@
+CD-ROM SETUP
+============
+
+CD-ROM support is loaded by the CDROM boot profile (menu item 4). It
+uses two pieces:
+
+ * UIDE.SYS - a universal IDE/ATAPI driver that finds the CD drive and
+   gives it the internal name CASTLCD1. It is loaded in CONFIG.SYS.
+ * SHSUCDX  - assigns the drive a letter (D: by default). It is loaded
+   in AUTOEXEC.BAT.
+
+So: reboot, pick 4 (CD-ROM Gaming), and your CD appears as drive D:.
+
+If there is no D: drive after booting the CDROM profile:
+
+ * Watch the boot messages. UIDE prints whether it found a CD drive.
+   If it did not, check the IDE cable and that the drive is set to a
+   sane master/slave jumper.
+ * A drive-letter clash can hide the CD. LASTDRIVE must be high enough
+   (CASTALIA sets LASTDRIVE=M). To force a letter, edit the SHSUCDX
+   line in AUTOEXEC.BAT and change /L:D to another free letter.
+
+For CD games, copy or run the game from D:, and if the game has its
+own SETUP, point it at the CD.
+
+Audio CDs: most CD games play music straight from the drive; connect
+the CD audio cable to the sound card for that to be heard.
+
+See also: HELP GAMES   HELP MEMORY

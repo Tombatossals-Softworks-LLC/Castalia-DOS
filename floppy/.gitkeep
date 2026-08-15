@@ -1,0 +1,3 @@
+# Floppy-image staging: put the FreeDOS boot sector (fdboot.bin) and the
+# gathered payload/ (KERNEL.SYS, COMMAND.COM, drivers, utilities) here.
+# See ../scripts/build-floppy.md.

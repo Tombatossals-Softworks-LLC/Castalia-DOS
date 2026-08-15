@@ -1,0 +1,88 @@
+CASTALIA DOS - THIRD PARTY NOTICES
+==================================
+
+Castalia DOS is built on FreeDOS and other free software.  This notice lists
+every third-party component that may be present on this medium, its licence,
+and where to obtain its source.  It is copied onto release media alongside
+the licence texts it refers to.
+
+The original Castalia code (the CASTALIA/BIN tools, the shared modules, the
+installer) is MIT-licensed and its source is the project repository.  The
+Castalia name, wordmark and fortress artwork are not covered by that grant.
+
+Where the licence text lives on this medium: \CASTALIA\LICENSE\.
+
+
+1. FreeDOS kernel  (KERNEL.SYS, and the FAT12 boot sector)
+   Licence : GNU General Public License v2 or later  -> GPLv2.txt
+   Note    : Castalia ships a MODIFIED kernel.  The changes add a Castalia
+             sign-on, the OEM identity 0CAh, the CASTALIA= CONFIG.SYS
+             directive, and the INT 2Fh AH=0CAh identity/uptime multiplex.
+             Nothing is removed; it remains a superset of FreeDOS.
+   Source  : the unmodified upstream source, plus the script that produces
+             the modification, are on this medium under \SOURCES\ (see
+             KERNEL-SRC.ZIP) and in the project repository
+             (scripts/patch-kernel-src.py).
+
+2. FreeCOM  (COMMAND.COM)
+   Licence : GNU General Public License v2 or later  -> GPLv2.txt
+   Source  : \SOURCES\ on this medium, or the FreeDOS 1.3 package repository.
+
+3. FreeDOS base utilities  (SYS, FDISK, FORMAT, MEM, XCOPY, CHKDSK)
+   Licence : GNU General Public License v2 or later  -> GPLv2.txt
+   Source  : the FreeDOS 1.3 package repository; carried under \SOURCES\
+             where the release includes it.
+
+4. HimemX  (HIMEMX.EXE)
+   Licence : changes are Public Domain, but HimemX derives from FD Himem,
+             copyright Till Gerken and Tom Ehlert, under GPL and/or the
+             Artistic Licence  -> GPLv2.txt, Artistic-1.0.txt
+   Source  : \SOURCES\HIMEMX-SRC.ZIP
+
+5. Jemm386  (JEMM386.EXE)
+   Licence : partly the Artistic Licence  -> Artistic-1.0.txt
+             (the accompanying diagnostic tools are Public Domain)
+   Source  : \SOURCES\JEMM-SRC.ZIP
+
+6. SHSUCDX  (SHSUCDX.COM)
+   Licence : Freeware, copyright 2006-2020 Jason Hood
+   Source  : \SOURCES\SHSUCDX-SRC.ZIP
+
+7. CuteMouse  (CTMOUSE.EXE)
+   Licence : GNU General Public License  -> GPLv2.txt
+             copyright 1997-2002 Nagy Daniel
+   Source  : \SOURCES\CTMOUSE-SRC.ZIP
+
+8. UIDE  (UIDE.SYS)
+   Licence : Open Source DOS device drivers (see the package documentation)
+   Source  : \SOURCES\UIDE-SRC.ZIP
+
+9. Info-ZIP  (UNZIP.EXE, ZIP.EXE)          [only on media that include them]
+   Licence : the Info-ZIP licence, permissive  -> InfoZIP.txt
+   Source  : http://infozip.sourceforge.net/
+   Note    : UNZIP.EXE is a DJGPP build and needs a DPMI host; CWSDPMI.EXE
+             below is provided for that reason.  ZIP.EXE is the 16-bit
+             real-mode build and needs no DPMI host.
+
+10. CWSDPMI  (CWSDPMI.EXE)                 [only on media that include it]
+    Licence : GNU General Public License v2, with an additional permission
+              from the author  -> CWSDPMI.txt, GPLv2.txt
+              copyright 1995-2010 Charles W Sandmann
+    Note    : the author permits distributing the official, unmodified
+              binary together with precise information as to where to obtain
+              the source, in place of GPLv2 section 3.  That information is:
+    Source  : http://sandmann.dotster.com/cwsdpmi/
+
+11. Castalia documentation
+    Licence : Creative Commons Attribution 4.0 International -> CC-BY-4.0.txt
+
+12. Castalia game database  (GAMES.INI)
+    Licence : CC0 1.0 Universal (public domain dedication) -> CC0-1.0.txt
+
+
+No Microsoft-owned code, text or branding is present on this medium.
+Castalia DOS is not affiliated with, endorsed by, or derived from MS-DOS.
+
+The per-component table this notice summarises, with upstream URLs and the
+checksum record of what was actually downloaded, is LICENSES/MANIFEST.md in
+the project repository.

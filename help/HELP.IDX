@@ -1,0 +1,39 @@
+; CASTALIA DOS help index - read by HELP.EXE
+; One [id] section per topic; keys on their OWN lines (the INI reader
+; treats a [section] line purely as a header, so inline keys are lost).
+[START]
+title=Getting Started
+file=START.TXT
+[PROFILES]
+title=Boot Profiles
+file=PROFILES.TXT
+[GAMES]
+title=Installing Games
+file=GAMES.TXT
+[SOUND]
+title=Configuring Sound Blaster
+file=SOUND.TXT
+[MOUSE]
+title=Configuring the Mouse
+file=MOUSE.TXT
+[CDROM]
+title=CD-ROM Setup
+file=CDROM.TXT
+[MEMORY]
+title=Memory Troubleshooting
+file=MEMORY.TXT
+[PROBLEMS]
+title=Common Game Problems
+file=PROBLEMS.TXT
+[CONFIG]
+title=The CONFIG.SYS Guide
+file=CONFIG.TXT
+[AUTOEXEC]
+title=The AUTOEXEC.BAT Guide
+file=AUTOEXEC.TXT
+[RECOVERY]
+title=Recovery Guide
+file=RECOVERY.TXT
+[LEGAL]
+title=Legal and Licenses
+file=LEGAL.TXT

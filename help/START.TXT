@@ -1,0 +1,24 @@
+GETTING STARTED WITH CASTALIA DOS
+=================================
+
+Welcome. CASTALIA DOS is a DOS system tuned for games on older PCs.
+
+The basics:
+
+ * When the machine starts, you see a menu of boot profiles. If you
+   are not sure, just wait - the XMS profile is chosen for you and is
+   right for most games.
+
+ * After booting you get the Castalia menu. From here you can launch
+   games, set up sound, check your hardware, and more. Use the arrow
+   keys and Enter, or press the number next to an item.
+
+ * To add games, put each game in its own folder under C:\GAMES and
+   add a few lines to C:\CASTALIA\CFG\GAMES.INI. See "Installing
+   Games" (type: HELP GAMES).
+
+ * If a game will not run, try the CLEAN profile (reboot and pick 1),
+   which loads the least and frees the most memory.
+
+To read any topic, type HELP followed by its name, for example:
+   HELP SOUND      HELP MEMORY      HELP RECOVERY

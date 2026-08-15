@@ -1,0 +1,45 @@
+THE AUTOEXEC.BAT GUIDE
+======================
+
+AUTOEXEC.BAT runs right after CONFIG.SYS. In CASTALIA DOS it sets up
+the environment, then finishes whichever profile you booted.
+
+The boot menu leaves the entry NUMBER in %CONFIG%, so the first thing
+AUTOEXEC.BAT does is turn that number into a name:
+
+   IF "%CONFIG%"=="1" SET CASTPROFILE=CLEAN
+   IF "%CONFIG%"=="2" SET CASTPROFILE=XMS
+   ... through to 8, then a fallback if the menu never ran
+
+%CASTPROFILE% is the name every Castalia tool reads. Next it sets the
+shared environment for every profile:
+
+   SET PATH=C:\CASTALIA\BIN;C:\DOS;C:\
+   SET TEMP=C:\TEMP
+   PROMPT [CASTALIA $P]$G             the Castalia prompt
+   CALL C:\CASTALIA\CFG\SOUND.BAT     sets the BLASTER variable
+
+Then it branches on your choice:
+
+   GOTO %CASTPROFILE%
+   :XMS
+     load the mouse high, show the banner, start the Castalia menu
+   :CDROM
+     load the mouse + CD-ROM letter, then the menu
+   :SAFE
+     minimal - just a rescue banner and a prompt
+
+The Castalia menu is started by a small loop at the end. When you pick
+"Launch Games", the menu exits so the game gets all free memory, then
+the launcher runs.
+
+One trap worth knowing if you edit this file: never write the
+greater-than, less-than or pipe characters inside a REM comment. The
+shell looks for redirection before it notices the line is a comment,
+so a comment that merely draws an arrow makes DOS try to redirect
+into a file and print an error on every boot.
+
+To change what loads at boot, edit AUTOEXEC.BAT (CFGEDIT, or any text
+editor). Keep a backup with "Backup System Config".
+
+See also: HELP CONFIG   HELP PROFILES

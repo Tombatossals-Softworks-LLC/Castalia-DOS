@@ -1,55 +1,40 @@
-# Prerequisites
-*.d
+# Build products
+build/*.obj
+build/*.exe
+build/*.map
+build/*.lst
+build/KERNEL.SYS
+build/kernel-build/
 
-# Object files
+# Release images and checksums
+dist/*.img
+dist/*.zip
+dist/*.iso
+dist/*.sha256
+
+# Floppy staging payload (gathered from upstream at build time)
+floppy/payload/
+floppy/*.bin
+
+# Download cache for scripts/fetch-payload.sh (FreeDOS archives)
+.payload-cache/
+
+# Transient DOS test output
+TESTOUT.TXT
+
+# Vendored third-party binaries (gathered at build time; source per LICENSES/)
+third_party/*/
+!third_party/README.md
+
+# Editor / OS noise
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# stray object files from ad-hoc wcl/wcc invocations
 *.o
-*.ko
-*.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo

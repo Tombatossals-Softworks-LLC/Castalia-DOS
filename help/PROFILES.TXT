@@ -1,0 +1,24 @@
+BOOT PROFILES
+=============
+
+CASTALIA DOS gives you eight boot choices. Pick one at the menu when
+the machine starts; the default (XMS) is chosen after 10 seconds.
+
+   CLEAN   Maximum compatibility. Loads almost nothing. Try this if a
+           game refuses to start elsewhere.
+   XMS     Best all-round gaming profile. HIMEM + upper memory, no
+           EMS page frame, so you get the most free memory. Default.
+   EMS     For games that ask for expanded (EMS) memory. Adds a
+           64 KB page frame; use only when a game needs it.
+   CDROM   For CD-ROM games. Loads the CD driver; the CD becomes D:.
+   WIN3X   For Windows 3.1. Adds a disk cache and mouse.
+   DIAG    Boot, then show the hardware report (HWINFO).
+   SAFE    Bare system, no drivers. For repairs.
+   PROMPT  Straight to a command prompt, no menu.
+
+To see how much memory a profile frees, boot it and type:  MEM /C /P
+
+Switch profiles by rebooting and choosing again. Most people leave it
+on XMS and only switch to EMS or CDROM for specific games.
+
+See also: HELP MEMORY

@@ -1,0 +1,31 @@
+INSTALLING GAMES
+================
+
+1. Make a folder for the game under C:\GAMES, for example:
+      MD C:\GAMES\WOLF3D
+   Copy the game's files into it (from floppy, CD, or a ZIP you
+   unpacked on another machine).
+
+2. Tell the launcher about it. Open C:\CASTALIA\CFG\GAMES.INI in a
+   text editor and add a section:
+
+      [WOLF3D]
+      name        = Wolfenstein 3D
+      path        = C:\GAMES\WOLF3D
+      exe         = WOLF3D.EXE
+      profile     = XMS
+      sound       = SBPRO
+      mouse       = no
+      requires_cd = no
+      notes       = Runs well on a fast 386 or better.
+
+   The only required line is "exe". The launcher warns you if the
+   recommended profile is not the one you booted.
+
+3. Start the launcher: from the Castalia menu pick "Launch Games", or
+   type LAUNCH at the prompt. Choose the game and press Enter.
+
+Tip: if a game came with its own SETUP or INSTALL program, run that
+first inside the game's folder to configure sound and video.
+
+See also: HELP SOUND   HELP PROBLEMS

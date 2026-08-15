@@ -1,0 +1,141 @@
+name: CI
+
+# Full pipeline: gate -> unit tests -> real Open Watcom DOS build ->
+# E2E (DOS smoke test in DOSBox + bootable floppy image + boot test).
+#
+# push only: same-repo PRs get their checks from the branch push runs
+# (attached by head SHA), so a pull_request trigger would just run
+# everything twice.
+on:
+  push:
+
+jobs:
+  # -------------------------------------------------------------------
+  # Fast gate: C89 syntax of every DOS source (host stubs), shell lint,
+  # repo sanity.  Needs only gcc + shellcheck.
+  # -------------------------------------------------------------------
+  check:
+    name: Repository gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run repository checks
+        run: bash scripts/check.sh
+
+  # -------------------------------------------------------------------
+  # Host unit tests: the REAL DOS sources (shared INI module) compiled
+  # natively with gcc and executed, including parsing the shipped
+  # config files.
+  # -------------------------------------------------------------------
+  unit:
+    name: Unit tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run unit tests
+        run: bash scripts/test-unit.sh
+
+  # -------------------------------------------------------------------
+  # The real 16-bit DOS build with Open Watcom: all 20 tools plus the
+  # DOS-side smoke test program.  Verified (MZ headers) and uploaded.
+  # -------------------------------------------------------------------
+  build:
+    name: DOS build (Open Watcom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Open Watcom V2
+        uses: open-watcom/setup-watcom@v1
+        with:
+          version: "2.0"
+      - name: Install NASM (for the kernel rebuild)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nasm
+      - name: Build the suite (wmake)
+        run: wmake
+      - name: Build the DOS smoke test
+        run: wmake smoke
+      - name: Build the kernel API probe
+        run: wmake ktest
+      - name: Build the video-adapter probe
+        run: wmake vidtest
+      - name: Build the PC-speaker probe
+        run: wmake spktest
+      - name: Build the CD-audio probe
+        run: wmake cdtest
+      - name: Verify executables (present + MZ signature)
+        run: bash scripts/verify-exes.sh
+      - name: Rebuild the FreeDOS kernel with the CASTALIA sign-on
+        run: bash scripts/build-kernel.sh
+      - name: Upload tools + rebranded kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: castalia-tools
+          path: |
+            build/*.exe
+            build/KERNEL.SYS
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------
+  # E2E: run the smoke test INSIDE DOS (headless DOSBox), then build
+  # the bootable floppy image with a freshly fetched FreeDOS payload
+  # and BOOT it, asserting the AUTOEXEC marker comes back.
+  #
+  # The uploaded image is a CI test artifact (it contains GPL FreeDOS
+  # binaries); public releases must ship sources per
+  # docs/LICENSE-STRATEGY.md.
+  # -------------------------------------------------------------------
+  e2e:
+    name: E2E (DOS smoke + image + boot)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download built tools
+        uses: actions/download-artifact@v4
+        with:
+          name: castalia-tools
+          path: build
+      - name: Install DOSBox, mtools and NASM
+        run: |
+          sudo apt-get update -qq
+          # nasm is needed only on the fallback route, where the boot
+          # sector is assembled from the kernel source because the
+          # FloppyEdition image is unreachable (see fetch-payload.sh).
+          #  qemu-system-x86 boots the image as a whole PC, which is how
+          #  the kernel-API test proves our KERNEL.SYS actually answers
+          #  INT 2Fh rather than merely compiling.
+          #  dosbox-x adds the machine types plain DOSBox does not have -
+          #  CGA, EGA, MCGA, Hercules - which is the only way to test the
+          #  video-adapter probe against anything but VGA.
+          sudo apt-get install -y -qq dosbox dosbox-x mtools nasm qemu-system-x86
+      - name: Cache FreeDOS downloads
+        uses: actions/cache@v4
+        with:
+          path: .payload-cache
+          key: freedos-payload-fd13-v1
+      - name: Fetch the FreeDOS payload
+        run: bash scripts/fetch-payload.sh
+      - name: DOS smoke test (SMOKE.EXE in headless DOSBox)
+        run: bash scripts/test-dos.sh
+      - name: Video-adapter detection (VIDDET vs 11 emulated adapters)
+        run: bash scripts/test-video.sh
+      - name: PC speaker (tones sounded, captured and measured)
+        run: bash scripts/test-speaker.sh
+      - name: CD audio (CDPLAYER against a generated Red Book disc)
+        run: bash scripts/test-cdaudio.sh
+      - name: Build the bootable floppy image
+        run: bash scripts/build-floppy.sh --no-tools -o dist/castalia-ci.img -v ci -c snapshot
+      - name: Kernel API test (real KERNEL.SYS answering INT 2Fh under QEMU)
+        run: bash scripts/test-kernel-api.sh dist/castalia-ci.img
+      - name: Boot test (image boots to AUTOEXEC in DOSBox)
+        run: bash scripts/test-boot.sh dist/castalia-ci.img
+      - name: Upload floppy image (CI test artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: castalia-floppy-image
+          path: |
+            dist/castalia-ci.img
+            dist/castalia-ci.img.sha256
+          if-no-files-found: error

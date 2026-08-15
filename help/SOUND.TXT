@@ -1,0 +1,25 @@
+CONFIGURING SOUND BLASTER
+=========================
+
+DOS games find your sound card by reading the BLASTER variable. It
+looks like this:
+
+   SET BLASTER=A220 I5 D1 H5 T4
+
+   A220  card at I/O port 220 (hex)   I5  interrupt (IRQ) 5
+   D1    8-bit DMA channel 1          H5  16-bit DMA channel 5
+   T4    card type (4 = SB Pro, 6 = SB16)
+
+CASTALIA DOS sets this for you from C:\CASTALIA\CFG\SOUND.BAT. To
+change it, run Sound Setup from the Castalia menu (item 4), or edit
+SOUND.BAT by hand.
+
+Most cards use A220 I5 D1. If you hear nothing:
+ * make sure the card's own jumpers/software match these numbers
+ * try IRQ 7 instead of 5 (I7)
+ * for a plain Sound Blaster (not Pro/16), use T3 and drop H5
+
+In a game's own setup, choose "Sound Blaster" and the same port/IRQ.
+For music, choose "AdLib" or "Sound Blaster" - both use the FM chip.
+
+See also: HELP PROBLEMS
