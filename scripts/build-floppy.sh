@@ -166,6 +166,9 @@ add "$ROOT/config/GAMES.BAT"     "::/CASTALIA/BIN/" 1
 # docs/LICENSE-STRATEGY.md requires it, and GPL components are aboard.
 add "$ROOT/LICENSES/THIRD-PARTY.txt" "::/CASTALIA/LICENSE/" 1
 add "$ROOT/LICENSES/GPLv2.txt"       "::/CASTALIA/LICENSE/" 0
+# HIMEMX and JEMM386 are partly under the Artistic License, which also
+# asks for its text to travel with the binaries.  8.3 name on purpose.
+add "$ROOT/LICENSES/Artistic-1.0.txt" "::/CASTALIA/LICENSE/ARTISTIC.TXT" 1
 
 add "$ROOT/config/CASTALIA.INI"  "::/CASTALIA/CFG/" 1
 add "$ROOT/config/PROFILES.INI"  "::/CASTALIA/CFG/" 1
@@ -183,7 +186,22 @@ DIRS=( "::/DOS" "::/INSTALL" "::/CASTALIA" "::/CASTALIA/BIN"
        "::/CASTALIA/LICENSE" )
 
 dospath() { # turn "::/CASTALIA/BIN/" + basename into a DOS-ish path
-    local d="${1#::}"; printf '%s%s' "$d" "$2"
+    local d="${1#::}"
+    case "$d" in
+        */) printf '%s%s' "$d" "$2" ;;
+        *)  printf '%s' "$d" ;;          # destination names the file itself
+    esac
+}
+
+# Castalia's own text files (configs, batch files, help) go onto the disk
+# with CRLF line ends whatever the checkout used: a Linux checkout has LF,
+# a Windows one CRLF.  Vendored licence texts are copied byte for byte
+# (see .gitattributes), so they are not in this list.
+is_text() {
+    case "$1" in
+        "$ROOT"/config/*|"$ROOT"/help/*) return 0 ;;
+    esac
+    return 1
 }
 
 # ---- manifest mode (coreutils only; validate the layout) ------------
@@ -302,15 +320,27 @@ assemble() {
     for d in "${DIRS[@]}"; do mmd -i "$OUT" "$d"; done
 
     info "copying files"
+    local crlf
+    crlf="$(mktemp)"
     for entry in "${PLAN[@]}"; do
         IFS='|' read -r src dst req <<<"$entry"
         [ -f "$src" ] || continue          # optional missing already warned
-        mcopy -i "$OUT" -o "$src" "$dst"
+        case "$dst" in */) dst="$dst$(basename "$src")" ;; esac
+        if is_text "$src"; then
+            sed 's/\r$//; s/$/\r/' "$src" > "$crlf"
+            mcopy -i "$OUT" -o "$crlf" "$dst"
+        else
+            mcopy -i "$OUT" -o "$src" "$dst"
+        fi
     done
+    rm -f "$crlf"
 
     info "verifying"
     mdir -i "$OUT" ::/ >/dev/null
     mdir -i "$OUT" ::/CASTALIA/BIN >/dev/null
+    # The disk is nearly full, and a tool that grows past the edge only
+    # shows up as an mcopy "disk full".  Say how close it is every build.
+    info "free on the image: $(mdir -i "$OUT" ::/ | sed -n 's/^ *\([0-9][0-9 ]*\) bytes free.*/\1/p') bytes"
 
     if command -v sha256sum >/dev/null 2>&1; then
         ( cd "$(dirname "$OUT")" && sha256sum "$(basename "$OUT")" \
@@ -327,8 +357,51 @@ assemble() {
     info "test it:  dosbox-x $OUT     (then 86Box as a 386SX; see docs/TESTING.md)"
 }
 
+# ---- corresponding source, shipped beside the image ------------------
+#  The GPL components' source does not fit on a 1.44 MB disk, so it goes
+#  into a companion archive published next to the image.  GPLv2 section 3
+#  accepts that: equivalent access to the source from the same place.
+#  THIRD-PARTY.txt on the disk points here.
+pack_sources() {
+    local zip="${OUT%.img}"
+    zip="${zip%-boot}-sources.zip"
+    if [ ! -d "$PAYLOAD/SOURCES" ]; then
+        warn "no payload/SOURCES: this image is NOT releasable."
+        warn "run scripts/fetch-payload.sh --with-sources, then rebuild."
+        return 0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        warn "python3 not found; source archive not written (image is NOT releasable)"
+        return 0
+    fi
+    python3 - "$zip" "$PAYLOAD/SOURCES" "$ROOT" <<'PYZIP'
+import os, sys, zipfile
+out, srcdir, root = sys.argv[1:4]
+readme = (
+    "CASTALIA DOS - corresponding source for the third-party components\r\n"
+    "\r\n"
+    "SOURCES/*-SRC.ZIP   source archive of each FreeDOS component on the disk\r\n"
+    "SOURCES/KERNEL-SRC.ZIP  FreeDOS kernel 2043 source; the Castalia kernel is\r\n"
+    "                    this source with CASTALIA/patch-kernel-src.py applied\r\n"
+    "                    and built by CASTALIA/build-kernel.sh\r\n"
+    "CASTALIA/rebrand-dos.py  the in-place edit made to FreeCOM's COMMAND.COM\r\n"
+    "LICENSES/           licence texts and the component manifest\r\n"
+)
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("README.TXT", readme)
+    for name in sorted(os.listdir(srcdir)):
+        z.write(os.path.join(srcdir, name), "SOURCES/" + name)
+    for name in ("patch-kernel-src.py", "build-kernel.sh", "rebrand-dos.py"):
+        z.write(os.path.join(root, "scripts", name), "CASTALIA/" + name)
+    lic = os.path.join(root, "LICENSES")
+    for name in sorted(os.listdir(lic)):
+        z.write(os.path.join(lic, name), "LICENSES/" + name)
+PYZIP
+    ok "source archive: $zip"
+}
+
 # ---- main -----------------------------------------------------------
 case "$MODE" in
     manifest) run_manifest ;;
-    build|staging) build_tools; assemble ;;
+    build|staging) build_tools; assemble; pack_sources ;;
 esac

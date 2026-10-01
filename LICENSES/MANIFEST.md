@@ -16,7 +16,7 @@ rather than what someone believed was fetched. Read it alongside this table.
 | Component | Version | Upstream | License | Path in dist | Source obligation |
 |---|---|---|---|---|---|
 | FreeDOS kernel (`KERNEL.SYS`) | 2043, rebuilt as the Castalia kernel | ibiblio `dos/kernel/2043/ke2043s.zip` | GPLv2+ — [`GPLv2.txt`](GPLv2.txt), taken from `COPYING` in that source archive | `C:\` | ship source on media; the *modified* source is produced by `scripts/patch-kernel-src.py`, see [`../docs/KERNEL.md`](../docs/KERNEL.md) |
-| FAT12 boot sector (`fdboot.bin`) | assembled from the same kernel source | ibiblio `ke2043s.zip` → `boot/boot.asm` | GPLv2+ | boot sector | ship source on media (same archive as the kernel) |
+| FAT12 boot sector (`fdboot.bin`) | copied from the FloppyEdition boot image; assembled from `boot/boot.asm` only on the package fallback route | ibiblio `FD13-FloppyEdition.zip`, or `ke2043s.zip` → `boot/boot.asm` | GPLv2+ | boot sector | `KERNEL-SRC.ZIP` in the sources archive (same source either way) |
 | FreeCOM (`COMMAND.COM`) | FreeDOS 1.3 `freecom.zip` | ibiblio `repositories/1.3/base` | GPLv2+ | `C:\` | ship source on media |
 | `SYS.COM` | FreeDOS 1.3 `kernel.zip` | ibiblio `repositories/1.3/base` | GPLv2+ | `C:\DOS` | ship source on media |
 | `FDISK.EXE`, `FORMAT.EXE`, `MEM.EXE`, `XCOPY.EXE`, `CHKDSK.EXE` | FreeDOS 1.3 | ibiblio `repositories/1.3/base` | GPLv2+ | `C:\DOS` | ship source on media |
@@ -76,13 +76,19 @@ archive tools. All other GPL terms continue to apply.
 ## Release gate
 
 The short gate is in [`README.md`](README.md) and the full one in
-[`../docs/LICENSE-STRATEGY.md`](../docs/LICENSE-STRATEGY.md). Two additions this
+[`../docs/LICENSE-STRATEGY.md`](../docs/LICENSE-STRATEGY.md). Additions this
 manifest implies:
 
 1. Check `floppy/payload/PROVENANCE.txt` from the release build — every row
-   above should have a matching downloaded archive, with its checksum recorded.
-2. Run `fetch-payload.sh --with-sources` for a release build and confirm
-   `floppy/payload/SOURCES/` carries a `SOURCES.ZIP` for every GPL/Artistic
-   component in the table above — that is how the source obligation is met.
-3. Copy `THIRD-PARTY.txt` onto the image with the licence list, including the
-   CWSDPMI source URL quoted above, whenever the archive tools are included.
+   above should have a matching downloaded archive. Every archive is also
+   checked against the digest pinned in `scripts/payload.sha256`; the build
+   stops on a mismatch.
+2. Run `fetch-payload.sh --with-sources` for a release build. It stages a
+   `SOURCES.ZIP` for every GPL/Artistic component in the table above and
+   fails if one is missing. `build-floppy.sh` then writes
+   `castalia-dos-<version>-<codename>-sources.zip` beside the image.
+3. Publish that sources archive from the same place as the image. The source
+   does not fit on a 1.44 MB disk; GPLv2 §3 accepts equivalent access from
+   the same place, and `THIRD-PARTY.txt` on the disk points to the archive.
+4. Keep the CWSDPMI source URL quoted above in `THIRD-PARTY.txt` whenever the
+   archive tools are included.

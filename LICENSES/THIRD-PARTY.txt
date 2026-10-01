@@ -10,7 +10,14 @@ The original Castalia code (the CASTALIA/BIN tools, the shared modules, the
 installer) is MIT-licensed and its source is the project repository.  The
 Castalia name, wordmark and fortress artwork are not covered by that grant.
 
-Where the licence text lives on this medium: \CASTALIA\LICENSE\.
+Where the licence text lives on this medium: \CASTALIA\LICENSE\
+(GPLv2.txt, and the Artistic Licence as ARTISTIC.TXT).
+
+Where the source lives: the source of the GPL and Artistic components does
+not fit on a 1.44 MB disk, so it is published beside the disk image, from the
+same place, as castalia-dos-<version>-<codename>-sources.zip.  Its SOURCES\
+folder holds one archive per component, named below.  If you were given this
+disk without that archive, ask whoever gave it to you for it.
 
 
 1. FreeDOS kernel  (KERNEL.SYS, and the FAT12 boot sector)
@@ -19,43 +26,45 @@ Where the licence text lives on this medium: \CASTALIA\LICENSE\.
              sign-on, the OEM identity 0CAh, the CASTALIA= CONFIG.SYS
              directive, and the INT 2Fh AH=0CAh identity/uptime multiplex.
              Nothing is removed; it remains a superset of FreeDOS.
-   Source  : the unmodified upstream source, plus the script that produces
-             the modification, are on this medium under \SOURCES\ (see
-             KERNEL-SRC.ZIP) and in the project repository
-             (scripts/patch-kernel-src.py).
+   Source  : SOURCES\KERNEL-SRC.ZIP (the unmodified upstream source) and
+             CASTALIA\patch-kernel-src.py plus CASTALIA\build-kernel.sh (the
+             modification and the build), all in the sources archive.  The
+             same scripts are in the project repository.
 
 2. FreeCOM  (COMMAND.COM)
    Licence : GNU General Public License v2 or later  -> GPLv2.txt
-   Source  : \SOURCES\ on this medium, or the FreeDOS 1.3 package repository.
+   Note    : the sign-on banner is blanked in place by
+             CASTALIA\rebrand-dos.py (in the sources archive).
+   Source  : SOURCES\FREECOM-SRC.ZIP
 
 3. FreeDOS base utilities  (SYS, FDISK, FORMAT, MEM, XCOPY, CHKDSK)
    Licence : GNU General Public License v2 or later  -> GPLv2.txt
-   Source  : the FreeDOS 1.3 package repository; carried under \SOURCES\
-             where the release includes it.
+   Source  : SOURCES\SYS-SRC.ZIP, FDISK-SRC.ZIP, FORMAT-SRC.ZIP,
+             MEM-SRC.ZIP, XCOPY-SRC.ZIP, CHKDSK-SRC.ZIP
 
 4. HimemX  (HIMEMX.EXE)
    Licence : changes are Public Domain, but HimemX derives from FD Himem,
              copyright Till Gerken and Tom Ehlert, under GPL and/or the
              Artistic Licence  -> GPLv2.txt, Artistic-1.0.txt
-   Source  : \SOURCES\HIMEMX-SRC.ZIP
+   Source  : SOURCES\HIMEMX-SRC.ZIP
 
 5. Jemm386  (JEMM386.EXE)
    Licence : partly the Artistic Licence  -> Artistic-1.0.txt
              (the accompanying diagnostic tools are Public Domain)
-   Source  : \SOURCES\JEMM-SRC.ZIP
+   Source  : SOURCES\JEMM-SRC.ZIP
 
 6. SHSUCDX  (SHSUCDX.COM)
    Licence : Freeware, copyright 2006-2020 Jason Hood
-   Source  : \SOURCES\SHSUCDX-SRC.ZIP
+   Source  : SOURCES\SHSUCDX-SRC.ZIP
 
 7. CuteMouse  (CTMOUSE.EXE)
    Licence : GNU General Public License  -> GPLv2.txt
              copyright 1997-2002 Nagy Daniel
-   Source  : \SOURCES\CTMOUSE-SRC.ZIP
+   Source  : SOURCES\CTMOUSE-SRC.ZIP
 
 8. UIDE  (UIDE.SYS)
    Licence : Open Source DOS device drivers (see the package documentation)
-   Source  : \SOURCES\UIDE-SRC.ZIP
+   Source  : SOURCES\UIDE-SRC.ZIP
 
 9. Info-ZIP  (UNZIP.EXE, ZIP.EXE)          [only on media that include them]
    Licence : the Info-ZIP licence, permissive  -> InfoZIP.txt

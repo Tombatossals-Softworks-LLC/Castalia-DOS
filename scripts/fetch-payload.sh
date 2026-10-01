@@ -92,25 +92,51 @@ mkdir -p "$CACHE" "$PAYLOAD"
 #
 #  Every candidate is HTTPS.  An http:// fallback was tempting - it would
 #  survive a TLS-only outage - but these archives are a kernel and the
-#  executables that go straight into a bootable image, fetched with no
-#  signature or pinned digest to check them against.  Downgrading the one
-#  transport that authenticates the mirror would let anyone on the path
-#  swap the payload, and precisely during the outage this code exists to
-#  handle.  A failed build is the better outcome.
+#  executables that go straight into a bootable image.  The pinned digests
+#  below would catch a swapped file, but there is no reason to invite one.
+#  A failed build is the better outcome.
+#
+#  HTTPS authenticates the mirror, not the file.  Every archive is also
+#  checked against the digest pinned in scripts/payload.sha256, on download
+#  AND on a cache hit, so neither a changed upstream file nor a stale or
+#  tampered CI cache can reach the image unnoticed.
+PINS="$ROOT/scripts/payload.sha256"
+pin_check() { # cache file name -> 0 when it matches its pinned digest
+    local name="$1" want got
+    want=$(awk -v n="$name" '{ sub(/\r$/, "") } $1 !~ /^#/ && $2 == n { print $1 }' "$PINS")
+    if [ -z "$want" ]; then
+        err "$name has no pinned digest in scripts/payload.sha256"
+        return 1
+    fi
+    got=$(sha256sum "$CACHE/$name" | cut -d' ' -f1)
+    [ "$got" = "$want" ] && return 0
+    err "$name does not match its pinned digest"
+    err "  expected $want"
+    err "  got      $got"
+    return 1
+}
+
 fetch() { # url -> cache file (skip when cached)
     local url="$1" out="$CACHE/$2" u code codes=""
     if [ -s "$out" ]; then
-        info "cached: $2"
-        record "$url" "$2"          # a cache hit is still provenance
-        return 0
+        if pin_check "$2"; then
+            info "cached: $2"
+            record "$url" "$2"      # a cache hit is still provenance
+            return 0
+        fi
+        warn "discarding the cached $2 and downloading it again"
+        rm -f "$out"
     fi
     info "downloading $2 ..."
     for u in "$url" \
              "${url/https:\/\/www.ibiblio.org/https:\/\/ibiblio.org}"; do
         code=$(curl -sL --max-time 600 -o "$out" -w '%{http_code}' "$u" || echo 000)
         if [ "$code" = "200" ] && [ -s "$out" ]; then
-            record "$u" "$2"
-            return 0
+            if pin_check "$2"; then
+                record "$u" "$2"
+                return 0
+            fi
+            code="digest-mismatch"
         fi
         rm -f "$out"
         codes="$codes  $code $u"
@@ -122,7 +148,7 @@ fetch() { # url -> cache file (skip when cached)
     printf '%s\n' "$codes" >&2
     err "This is an upstream mirror problem, not a fault in this repository."
     err "Re-run once the mirror recovers, or prime .payload-cache/$2 by hand"
-    err "(the CI cache key is freedos-payload-fd13-v1)."
+    err "(it is checked against scripts/payload.sha256 either way)."
     exit 1
 }
 
@@ -295,18 +321,29 @@ fi
 if [ "$WITH_SOURCES" = "1" ]; then
     info "staging vendored sources (GPL/Artistic obligation)"
     mkdir -p "$PAYLOAD/SOURCES"
-    for comp in himemx jemm shsucdx ctmouse uide; do
+    #  Every component on the media, not only the ones fetched as packages:
+    #  on the FloppyEdition route the shell and the base utilities come out
+    #  of the boot image, so their packages are fetched here just for the
+    #  source.  The 1.3 packages are the same release as the image.
+    for rel in base/kernel base/freecom base/fdisk base/format base/mem \
+               base/xcopy base/chkdsk base/himemx base/jemm base/shsucdx \
+               base/ctmouse drivers/uide; do
+        comp="$(basename "$rel")"
         pkg="$comp.zip"
-        [ -s "$CACHE/$pkg" ] || continue
+        fetch "$PKG_ROOT/$rel.zip" "$pkg"
         member=$(unzip -Z1 "$CACHE/$pkg" 2>/dev/null |
                  grep -iE '^SOURCE/.*SOURCES\.ZIP$' | head -1)
         if [ -z "$member" ]; then
-            warn "$pkg ships no SOURCES.ZIP - record it by hand before release"
-            continue
+            err "$pkg ships no SOURCES.ZIP - its source obligation is unmet"
+            exit 1
         fi
+        # The kernel package is here for SYS.COM; KERNEL-SRC.ZIP is reserved
+        # for the source the Castalia kernel is actually built from.
+        name="$(echo "$comp" | tr '[:lower:]' '[:upper:]')"
+        [ "$comp" = "kernel" ] && name="SYS"
         unzip -o -q -j "$CACHE/$pkg" "$member" -d "$PAYLOAD/SOURCES"
         mv "$PAYLOAD/SOURCES/$(basename "$member")" \
-           "$PAYLOAD/SOURCES/$(echo "$comp" | tr '[:lower:]' '[:upper:]')-SRC.ZIP"
+           "$PAYLOAD/SOURCES/$name-SRC.ZIP"
     done
     # The kernel is the most prominent GPL component of all, and its source
     # is the archive build-kernel.sh rebuilds from rather than something

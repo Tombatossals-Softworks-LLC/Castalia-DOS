@@ -64,6 +64,18 @@ if [ ! -s "$CACHE/ke2043s.zip" ]; then
 else
     info "cached: ke2043s.zip"
 fi
+#  "Pinned" means pinned: the same digest fetch-payload.sh checks.  This
+#  source becomes the kernel every Castalia machine boots.
+want=$(awk '{ sub(/\r$/, "") } $1 !~ /^#/ && $2 == "ke2043s.zip" { print $1 }' \
+           "$ROOT/scripts/payload.sha256")
+got=$(sha256sum "$CACHE/ke2043s.zip" | cut -d' ' -f1)
+if [ -z "$want" ] || [ "$got" != "$want" ]; then
+    err "ke2043s.zip does not match its pinned digest in scripts/payload.sha256"
+    err "  expected ${want:-<none>}"
+    err "  got      $got"
+    exit 1
+fi
+ok "ke2043s.zip matches its pinned digest"
 
 # ---- fresh work tree ------------------------------------------------
 rm -rf "$WORK"
