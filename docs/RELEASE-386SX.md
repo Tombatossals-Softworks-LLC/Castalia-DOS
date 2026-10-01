@@ -7,6 +7,10 @@ happened yet. **You are the hardware sign-off.**
 
 Current build: **`1.0-alpha5 "Tombatossals"`**.
 
+The git tag for alpha5 went out misspelled, as `v1.0-aplha5`, and points at
+`2d69bc7`. It stays as published; later tags follow
+[`DISTRIBUTION.md`](DISTRIBUTION.md): annotated, `v<version>-<codename>`.
+
 ---
 
 ## What changed since alpha1/alpha2
@@ -52,6 +56,42 @@ test is to find what emulation could not.
 - Every tool compiles for 8086-class real mode with Open Watcom and carries a
   valid MZ header.
 
+**Verified on a real 386SX, 2026-10-01** (photos and numbers in
+[`tests/results/2026-10-01-dabellan-386sx-real.md`](../tests/results/2026-10-01-dabellan-386sx-real.md)):
+
+- The installed system boots from `C:` to the Castalia menu on the CLEAN and
+  EMS profiles, and the status bar names the profile.
+- The EMS profile gets a working page frame: XMS 3.00 and EMS are both
+  present. This is what QEMU could not show.
+- The kernel identity calls answer on real hardware: `CASTID` shows build 1,
+  edition `01h`, OEM `CAh`, the boot profile and a live uptime.
+- `HWINFO` reports the 80386, the 387, 639 KB base memory, XMS, EMS, VGA and
+  the mouse driver.
+- `CASTMARK` completes the CPU, FPU, memory and video benchmarks.
+- A VGA game, *The Secret of Monkey Island*, starts from Launch Games and runs.
+
+One failure: the `CASTMARK` disk benchmark stops with
+`Error writing to drive C: DOS area: drive not ready`. The benchmark writes its
+test file before reading it, and that write is what fails. Whether ordinary
+writes to `C:` fail on this machine too is the next thing to find out.
+
+**Worth re-running on the 386SX with the next build.** None of these has met
+real hardware yet:
+
+1. At the prompt, before anything else: `CHKDSK C:` (no `/F`), then
+   `ECHO test > C:\T1.TXT` on CLEAN and on SAFE. If that fails the same way,
+   the problem is the disk path, not the benchmark.
+2. `CASTMARK` again. A disk error should now read `failed: drive not ready`
+   in the marks panel instead of DOS's Abort/Retry prompt, and the index
+   should still appear from the other four benchmarks. The test file now
+   goes to `%TEMP%` (`C:\TEMP`).
+3. Any tool after a game that leaves a graphics mode: the menu should come
+   back in text mode on its own.
+4. `CASTDOC` on a 720 KB disk in a 1.44 MB drive: it should scan at 9 sectors
+   per track and say it took the geometry from the boot sector.
+5. `SETUP` on a disk that already has Castalia: it should keep your INI files
+   and leave `CONFIG.ORG`/`AUTOEXEC.ORG` in `C:\CASTALIA\BACKUP` untouched.
+
 **Not verified anywhere — this is your list:**
 
 | Area | Why emulation could not settle it |
@@ -60,7 +100,7 @@ test is to find what emulation could not.
 | **A real CD-ROM drive** | The data path works against QEMU's ATAPI model. Real drives, real controllers and a 386SX's ISA IDE are a different matter. |
 | **Sound Blaster** | IRQ/DMA behaviour is exactly what emulators smooth over. |
 | **PC speaker** | Emulated coarsely; it needs an ear and a real cone. |
-| **`CASTMARK` disk anchor** | The other four anchors are measured and settled; an emulated IDE image is not a real drive or a CompactFlash card. |
+| **`CASTMARK` disk anchor** | An emulated IDE image is not a real drive or a CompactFlash card. On the first real 386SX the benchmark failed writing its test file to `C:`, so there is still no real number. |
 | **Real IDE / CompactFlash** | Timing and geometry quirks are hardware-specific. |
 | **`CASTLINK`** | Needs a second machine and a null-modem cable. |
 | **`UNDEL`** | Needs a diskette with genuinely deleted files. |

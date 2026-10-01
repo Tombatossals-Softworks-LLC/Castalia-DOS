@@ -409,10 +409,16 @@ the chosen key so navigation stays predictable.
 
 Drive enumeration walks A: through the last logical drive reported by
 `AH=0Eh`, calling the free-space service on each and listing only those that do
-**not** return the `FFFFh` invalid marker. This avoids the notorious "Abort,
-Retry, Fail" critical-error prompt: CASTFM installs no INT 24h handler beyond a
-minimal one that fails silently, and prefers the non-intrusive `AH=36h` probe
-to detect a not-ready floppy before touching it.
+**not** return the `FFFFh` invalid marker. The probe is non-intrusive, so a
+not-ready floppy is spotted before CASTFM touches it. When a disk operation does
+hit a critical error anyway (no disk, write-protected, bad sector), the
+notorious "Abort, Retry, Fail" prompt never appears over the screen: the shared
+UI toolkit's `ui_init()` installs an INT 24h handler, used by every Castalia
+tool, that answers FAIL and records the error code. The DOS call simply fails,
+and CASTFM shows the reason from `ui_crit_take()` / `ui_crit_text()` (for
+example "Copy failed" with "disk is write-protected") instead of a bare
+failure. `ui_done()` puts the previous handler back, so programs started with
+F4 get the normal DOS prompt.
 
 ### 12.6.6 Free Space — INT 21h AH=36h
 

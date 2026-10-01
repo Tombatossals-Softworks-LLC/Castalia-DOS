@@ -716,4 +716,5 @@ artifacts on any Linux host:
 Only after gate 9 is a build an official CASTALIA DOS release. Copyright and
 licensing follow the project summary: © 2026 The Castalia DOS Project (repo
 owner `davabe`); original Castalia code MIT; documentation CC BY 4.0; modified
-FreeDOS components remain GPLv2+ and ship with source in `third_party/`.
+FreeDOS components remain GPLv2+ and their source is published beside each
+release image.

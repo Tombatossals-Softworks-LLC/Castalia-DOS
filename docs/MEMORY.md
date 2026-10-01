@@ -78,12 +78,14 @@ The minimal sane configuration. HIMEMX loads (so DOS can live in the HMA), and
 nothing else. No EMM386, no UMBs, no page frame, no TSRs. This is the profile
 to reach for when a cranky real-mode game refuses to run anywhere else.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 1**
 ```
-[CLEAN]
-DEVICE=C:\DOS\HIMEMX.EXE
-DOS=HIGH
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+168?DOS=HIGH
 ```
+The `n?` prefix is the FreeDOS kernel's own syntax: the line runs only when
+one of the listed entries was chosen. The kernel has no MS-DOS-style
+`[CLEAN]` blocks; see [`BOOT.md`](BOOT.md) before editing.
 
 **AUTOEXEC.BAT behaviour:** sets the environment and prompt, sets a fallback
 `BLASTER`, loads **no** mouse and **no** cache, shows the banner, and starts
@@ -109,12 +111,11 @@ and any TSRs load high) while reserving no page frame, which produces the
 the many games that use it. This is the default and the right choice for the
 overwhelming majority of 1990–1995 titles.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 2**
 ```
-[XMS]
-DEVICE=C:\DOS\HIMEMX.EXE
-DEVICE=C:\DOS\JEMM386.EXE NOEMS I=B000-B7FF
-DOS=HIGH,UMB
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+2?DEVICE=C:\DOS\JEMM386.EXE NOEMS I=B000-B7FF
+2345?DOS=HIGH,UMB
 ```
 `I=B000-B7FF` reclaims the unused monochrome text region as extra UMB space on
 colour (VGA) systems. Remove it if a specific title misbehaves.
@@ -143,12 +144,11 @@ paths, some Sierra titles, larger Warcraft maps). The page frame costs upper
 memory, so conventional is a little lower than XMS — use this profile only
 when a game actually needs EMS.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 3**
 ```
-[EMS]
-DEVICE=C:\DOS\HIMEMX.EXE
-DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
-DOS=HIGH,UMB
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+345?DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
+2345?DOS=HIGH,UMB
 ```
 
 **AUTOEXEC.BAT behaviour:** identical to XMS (mouse high, `BLASTER`, menu) —
@@ -170,18 +170,20 @@ the difference is entirely in `CONFIG.SYS` (the page frame).
 ## Profile: CDROM — CD-ROM Gaming
 
 The EMS base plus the CD-ROM stack: `UIDE.SYS` (a universal IDE/ATAPI driver,
-loaded high in `CONFIG.SYS`) binds the drive to the name `CASTLCD1`, and
+loaded in `CONFIG.SYS`) binds the drive to the name `CASTLCD1`, and
 `SHSUCDX` (an MSCDEX replacement, loaded high in `AUTOEXEC.BAT`) assigns it a
 drive letter (D: by default). The sound environment is set as usual.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 4**
 ```
-[CDROM]
-DEVICE=C:\DOS\HIMEMX.EXE
-DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
-DOS=HIGH,UMB
-DEVICEHIGH=C:\CASTALIA\DRV\UIDE.SYS /D:CASTLCD1 /H
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+345?DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
+2345?DOS=HIGH,UMB
+4?DEVICE=C:\CASTALIA\DRV\UIDE.SYS /D:CASTLCD1 /N1 /N3
 ```
+`/N1` limits UIDE to CD/DVD drives and `/N3` runs it without an XMS cache,
+which it refuses to do from upper memory, hence `DEVICE` rather than
+`DEVICEHIGH`. The reasons are spelled out in `config/CONFIG.SYS`.
 
 **AUTOEXEC.BAT behaviour (CDROM branch):**
 ```
@@ -205,22 +207,25 @@ IF EXIST C:\DOS\SHSUCDX.COM LH C:\DOS\SHSUCDX.COM /D:CASTLCD1 /L:D
 
 Windows 3.1 and Windows for Workgroups 3.11 prefer a system with an EMM
 present, a mouse, and a disk cache. This profile provides HIMEMX + JEMM386
-(with EMS) + UMBs, loads `CTMOUSE`, and starts a SmartDrive-style cache.
+(with EMS) + UMBs, loads `CTMOUSE`, and starts `SMARTDRV` if you have put
+one in `C:\DOS`. No cache ships with CASTALIA DOS: Microsoft's `SMARTDRV` is
+not redistributable.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 5**
 ```
-[WIN3X]
-DEVICE=C:\DOS\HIMEMX.EXE
-DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
-DOS=HIGH,UMB
+1234568?DEVICE=C:\DOS\HIMEMX.EXE
+345?DEVICE=C:\DOS\JEMM386.EXE FRAME=E000 I=B000-B7FF
+2345?DOS=HIGH,UMB
 ```
 
 **AUTOEXEC.BAT behaviour (WIN3X branch):**
 ```
 IF EXIST C:\CASTALIA\DRV\CTMOUSE.EXE LH C:\CASTALIA\DRV\CTMOUSE.EXE
-IF EXIST C:\DOS\SMARTDRV.EXE LH C:\DOS\SMARTDRV.EXE 1024 0
+IF EXIST C:\DOS\SMARTDRV.EXE LH C:\DOS\SMARTDRV.EXE C 1024 0
 ```
-(`1024 0` = 1 MB cache, no write-behind — safer on real hardware and CF.)
+(`C` caches drive C: for reads only, so nothing is held back from the disk;
+`1024 0` is a 1 MB cache that Windows may not shrink. The second number is
+the Windows cache size, not a write-behind switch.)
 
 | | |
 |---|---|
@@ -239,10 +244,9 @@ The bare kernel and shell. No HIMEMX, no EMM386, no drivers, no TSRs; DOS
 stays in low memory. Use it to recover a machine when a driver or profile
 misbehaves, or to give a truly hostile real-mode game every last byte.
 
-**CONFIG.SYS block**
+**CONFIG.SYS lines for entry 7**
 ```
-[SAFE]
-DOS=LOW
+7?DOS=LOW
 ```
 
 **AUTOEXEC.BAT behaviour:** trims `PATH`, prints a rescue banner listing

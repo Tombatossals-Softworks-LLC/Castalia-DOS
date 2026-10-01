@@ -144,11 +144,11 @@ MENU
 MENU      CASTALIA DOS 386SX Edition   -   choose a boot profile
 MENU      ---------------------------------------------------------
 MENU
-MENU      1. Maximum Compatibility ... most free conventional RAM
+MENU      1. Maximum Compatibility ... HIMEM only, no EMM, no UMB
 MENU      2. XMS Gaming .............. HIMEM + UMB, no EMS page frame
 MENU      3. EMS Gaming .............. HIMEM + 64 KB EMS frame + UMB
 MENU      4. CD-ROM Gaming ........... EMS + CD-ROM driver + sound
-MENU      5. Windows 3.x Mode ........ EMS + SmartDrive-style cache
+MENU      5. Windows 3.x Mode ........ EMS + mouse (+ your SMARTDRV)
 MENU      6. Diagnostics ............. boot, then run HWINFO
 MENU      7. Safe Mode ............... bare kernel, no drivers
 MENU      8. Command Prompt Only ..... no Castalia menu, straight to DOS
@@ -172,7 +172,7 @@ branch. The eight options and their implementations:
 | 2 | XMS Gaming (default) | +JEMM386 NOEMS +UMB | mouse high → menu |
 | 3 | EMS Gaming | +EMS frame +UMB | mouse high → menu |
 | 4 | CD-ROM Gaming | +UIDE +UMB | mouse + SHSUCDX high → menu |
-| 5 | Windows 3.x Mode | +EMS +UMB | mouse + SmartDrive → menu |
+| 5 | Windows 3.x Mode | +EMS +UMB | mouse + SMARTDRV if present → menu |
 | 6 | Diagnostics | HIMEMX + `DOS=HIGH` | run `HWINFO.EXE` → prompt |
 | 7 | Safe Mode | `DOS=LOW`, nothing loaded | rescue banner → prompt |
 | 8 | Command Prompt Only | HIMEMX + `DOS=HIGH` | banner → prompt (no menu) |
