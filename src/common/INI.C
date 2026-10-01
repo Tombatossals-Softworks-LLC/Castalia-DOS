@@ -9,6 +9,7 @@
  * C friendly.
  * =================================================================== */
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,10 @@ static int   ini_size = 0;
 
 static char *ini_lines[INI_MAX_LINES];   /* pointers into ini_buf       */
 static int   ini_nlines = 0;
+/* Lines and [sections] that did not fit the tables above.  They used to
+ * vanish silently, and a tool that writes the file back would then drop
+ * them for good; ini_dropped() lets it notice. */
+static int   ini_ndropped = 0;
 
 static char *ini_sec_name[INI_MAX_SECTIONS]; /* section name pointers    */
 static int   ini_sec_line[INI_MAX_SECTIONS]; /* line index of the header */
@@ -101,6 +106,8 @@ static void ini_split_lines(void)
             continue;            /* blank or comment */
         if (ini_nlines < INI_MAX_LINES)
             ini_lines[ini_nlines++] = t;
+        else
+            ini_ndropped++;
     }
 }
 
@@ -124,6 +131,8 @@ static void ini_scan_sections(void)
             ini_sec_name[ini_nsec] = line + 1;
             ini_sec_line[ini_nsec] = i;
             ini_nsec++;
+        } else {
+            ini_ndropped++;
         }
     }
 }
@@ -139,6 +148,7 @@ int ini_open(const char *path)
     ini_size = 0;
     ini_nlines = 0;
     ini_nsec = 0;
+    ini_ndropped = 0;
     ini_buf[0] = '\0';
 
     fp = fopen(path, "rb");
@@ -230,12 +240,39 @@ const char *ini_get_def(const char *section, const char *key,
     return v;
 }
 
-int ini_get_int(const char *section, const char *key, int def)
+/* strtol rather than atoi: atoi cannot report junk ("12abc", "abc") and
+ * truncates to a 16-bit int on the DOS build, so a saved 40000 came back
+ * negative.  A trailing "; comment" after the number is allowed, as the
+ * shipped CASTALIA.INI writes them that way. */
+long ini_get_long(const char *section, const char *key, long def)
 {
     const char *v = ini_get(section, key);
+    char *end;
+    long n;
+
     if (v == NULL || v[0] == '\0')
         return def;
-    return atoi(v);
+    n = strtol(v, &end, 10);
+    if (end == v)
+        return def;
+    while (*end == ' ' || *end == '\t')
+        end++;
+    if (*end != '\0' && *end != ';' && *end != '#')
+        return def;
+    return n;
+}
+
+int ini_dropped(void)
+{
+    return ini_ndropped;
+}
+
+int ini_get_int(const char *section, const char *key, int def)
+{
+    long n = ini_get_long(section, key, (long)def);
+    if (n < (long)INT_MIN || n > (long)INT_MAX)
+        return def;
+    return (int)n;
 }
 
 int ini_get_bool(const char *section, const char *key, int def)

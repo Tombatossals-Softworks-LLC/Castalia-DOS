@@ -141,7 +141,8 @@ static void banner_boot(int quick)
      * the CP437 dot (0xFA) separates the names. */
     ui_center(21, "Dave Abellan  \xFA  Claudio di Castello", A_HINT);
     if (env != NULL && env[0] != '\0') {
-        sprintf(buf, "profile: %s", env);
+        /* The environment is the user's: bound it to the buffer. */
+        sprintf(buf, "profile: %.40s", env);
         ui_center(22, buf, A_HINT);
     }
     ui_center(23, "the fortress holds", A_HINT);

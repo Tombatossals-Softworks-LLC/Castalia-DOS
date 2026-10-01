@@ -1,7 +1,13 @@
 # src/castdoc — CASTDOC.EXE (prototype)
 
 The Castalia disk doctor, surface side (`wmake castdoc`). **Read-only** by
-construction: only INT 13h `AH=04h` (verify) is issued — it never writes.
+construction: it issues only INT 13h `AH=02h` (one read of a diskette's boot
+sector, to learn the disk's own geometry from its BPB) and `AH=04h` (verify).
+It never writes.
+
+A 720K disk in a 1.44M drive is scanned at 9 sectors per track, not the
+drive's 18; without a valid BPB it falls back to the drive maximum and says
+so on screen.
 
 Per drive (A:, B:, first hard disk): reports BIOS geometry and the floppy
 type (360K/1.2M/720K/1.44M — distinguishes 5.25″ from 3.5″ drives), then

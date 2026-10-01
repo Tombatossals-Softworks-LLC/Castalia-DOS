@@ -19,9 +19,11 @@
  *   - Baseline constants below are PROVISIONAL calibration anchors to
  *     tune on real hardware; raw numbers are always shown.
  *
- * Build (Open Watcom):
+ * Build (Open Watcom; the Makefile rule is authoritative):
  *   wcl -0 -bt=dos -ml -os castmark.c ..\common\ini.c ..\common\ui.c
- *       ..\common\cpudet.c   (cpudet compiled -3; see Makefile)
+ *       ..\common\cpudet.c ..\common\xmsinfo.c ..\common\viddet.c
+ *   Every unit builds at plain -0: CPUDET's 386+ probes are byte-encoded
+ *   inside #pragma aux, so no module needs a higher -N level.
  *
  * C89 only.  No dynamic allocation.
  * =================================================================== */
@@ -50,8 +52,15 @@
  * By construction the reference machine now scores exactly 100.
  *
  * Provenance and confidence, per anchor:
- *   CPU/FPU/memory/video  86Box emulates 386-class timing cycle by
- *                         cycle, so these should hold on metal.
+ *   CPU/FPU/video         86Box emulates 386-class timing cycle by
+ *                         cycle, and the first real 386SX run
+ *                         (tests/results/2026-10-01-dabellan-386sx-real.md)
+ *                         agreed: CPU x1.2, FPU x0.9, video x1.1.
+ *   memory copy           expected to hold for the same reason, but that
+ *                         run measured 2683 KB/s, x0.4.  NOT confirmed:
+ *                         one machine cannot say whether the board or
+ *                         the emulator is off, so the anchor stays as
+ *                         measured until a second real machine reports.
  *   disk read             the least transferable of the five: it is an
  *                         emulated IDE image, and a real drive or a
  *                         CompactFlash card behaves differently.  Worth
@@ -76,7 +85,17 @@ static const char *bench_unit[NBENCH] = {
     "kOps/s", "kFLOP/s", "KB/s", "scr/s", "KB/s"
 };
 
+/* Negative results mean "no number", and ratio_fx() and the index treat
+ * every negative value alike.  The screen does not: a benchmark that was
+ * never attempted (no FPU) is "skipped", but one that tried and was
+ * refused by the hardware is "failed", with the reason kept beside it.
+ * On the first real 386SX the disk test died on "drive not ready", and
+ * calling that "skipped" would have hidden it. */
+#define RES_SKIPPED  (-1L)
+#define RES_FAILED   (-2L)
+
 static long results[NBENCH];
+static const char *fail_why[NBENCH];
 static long prev[NBENCH];
 static long prev_index = -1;
 static int  have_run = 0;
@@ -194,7 +213,9 @@ static void dos_version(int *major, int *minor)
 
 static void fmt_value(int idx, long v, char *out)
 {
-    if (v < 0) {
+    if (v == RES_FAILED) {
+        strcpy(out, "failed");
+    } else if (v < 0) {
         strcpy(out, "skipped");
     } else if (idx == 3) {
         sprintf(out, "%ld.%ld %s", v / 10L, v % 10L, bench_unit[idx]);
@@ -253,8 +274,14 @@ static void draw_mark(int i)
 
     /* Bar: log scale from 1/4x to 32x the 386SX/16 baseline, with the
      * multiplier printed at the right so a saturated bar still carries
-     * the number. */
-    if (v < 0) {
+     * the number.  A failed benchmark gets its reason there instead:
+     * the bar line is the only one with room for it (35 columns; the
+     * longest INT 24h phrase makes "failed: " plus 23). */
+    if (v == RES_FAILED) {
+        sprintf(buf, "failed: %.26s",
+                fail_why[i] ? fail_why[i] : "unknown error");
+        ui_putlim(43, ny + 1, buf, 35, UI_ATTR(C_LRED, C_BLUE));
+    } else if (v < 0) {
         ui_hbar(43, ny + 1, BAR_MK_W, 0, A_TITLE, A_HINT);
     } else {
         long rf = ratio_fx(i);
@@ -336,7 +363,9 @@ static void draw_inspector(void)
     ui_puts(3, y++, v, A_ITEM);
 
     env = getenv("CASTPROFILE");
-    sprintf(v, "Profile      %s", (env && env[0]) ? env : "(unknown)");
+    /* CASTPROFILE is whatever the user's environment says, so bound it:
+     * v is 48 bytes and the column clips at 35 anyway. */
+    sprintf(v, "Profile      %.20s", (env && env[0]) ? env : "(unknown)");
     ui_puts(3, y++, v, A_ITEM);
 }
 
@@ -616,6 +645,62 @@ static long bench_vid(void)
 #define DSK_BLKS  24                    /* 48 KB test file */
 
 static char dskbuf[DSK_BLK];
+static char dsk_path[80];
+
+/* Point dsk_path at %TEMP%\CMARK$$.TMP.  TEMP is where the user said
+ * scratch files belong - a RAM disk, or simply a drive that takes
+ * writes - and the current directory may be a read-only or unhappy one:
+ * on the first real 386SX, writing into it failed with "drive not
+ * ready".  Returns 0 when TEMP is unset or too long to use. */
+static int dsk_path_temp(void)
+{
+    const char *t = getenv("TEMP");
+    size_t n;
+
+    if (t == NULL || t[0] == '\0')
+        return 0;
+    n = strlen(t);
+    if (n + 1 + sizeof(DSK_FILE) > sizeof(dsk_path))
+        return 0;
+    strcpy(dsk_path, t);
+    /* "C:\TMP\" and "D:" already end where a name can follow. */
+    if (t[n - 1] != '\\' && t[n - 1] != '/' && t[n - 1] != ':')
+        dsk_path[n++] = '\\';
+    strcpy(dsk_path + n, DSK_FILE);
+    return 1;
+}
+
+/* Write the test file to dsk_path.  Returns 0, or -1 with *crit set to
+ * the INT 24h code of the failure (-1 when DOS refused without one, e.g.
+ * a full disk).  A partly written file is removed here, so a failure
+ * leaves nothing behind. */
+static int dsk_write(int *crit)
+{
+    FILE *fp;
+    int i, ok = 1;
+
+    ui_crit_take();             /* forget errors from before this try */
+    fp = fopen(dsk_path, "wb");
+    if (fp == NULL) {
+        *crit = ui_crit_take();
+        return -1;
+    }
+    for (i = 0; i < DSK_BLKS && ok; i++) {
+        if (fwrite(dskbuf, 1, DSK_BLK, fp) != DSK_BLK)
+            ok = 0;
+    }
+    /* The last block is still in the stdio buffer: a disk that fills
+     * up or stops answering may only say so here. */
+    if (fclose(fp) != 0)
+        ok = 0;
+    if (!ok) {
+        *crit = ui_crit_take();
+        remove(dsk_path);
+        ui_crit_take();
+        return -1;
+    }
+    return 0;
+}
 
 static long bench_dsk(void)
 {
@@ -624,26 +709,32 @@ static long bench_dsk(void)
     long el = 0;
     unsigned long bytes = 0;
     size_t n;
-    int i;
+    int i, crit = -1, written;
 
-    /* Prepare the test file (excluded from the timing). */
+    /* Prepare the test file (excluded from the timing).  TEMP first,
+     * then the current directory, which is all this ever used before. */
     for (i = 0; i < DSK_BLK; i++)
         dskbuf[i] = (char)(i & 0xFF);
-    fp = fopen(DSK_FILE, "wb");
-    if (fp == NULL)
-        return -1;
-    for (i = 0; i < DSK_BLKS; i++) {
-        if (fwrite(dskbuf, 1, DSK_BLK, fp) != DSK_BLK) {
-            fclose(fp);
-            remove(DSK_FILE);
-            return -1;
-        }
+    written = dsk_path_temp() && dsk_write(&crit) == 0;
+    /* Only retry in the current directory when TEMP was merely unusable
+     * (unset, missing directory).  A critical error means the drive itself
+     * said no, and the current directory is almost always on the same
+     * drive: on the real 386SX each refusal took minutes of BIOS timeouts,
+     * so trying twice would only double the wait. */
+    if (!written && crit < 0) {
+        strcpy(dsk_path, DSK_FILE);
+        written = dsk_write(&crit) == 0;
     }
-    fclose(fp);
+    if (!written) {
+        fail_why[4] = (crit >= 0) ? ui_crit_text(crit)
+                                  : "cannot write test file";
+        return RES_FAILED;
+    }
 
+    ui_crit_take();
     t0 = ui_ticks();
     do {
-        fp = fopen(DSK_FILE, "rb");
+        fp = fopen(dsk_path, "rb");
         if (fp == NULL)
             break;
         while ((n = fread(dskbuf, 1, DSK_BLK, fp)) > 0)
@@ -652,10 +743,17 @@ static long bench_dsk(void)
         el = ticks_since(t0);
         prog_update(el, (long)(bytes >> 10), "KB read");
     } while (el < DUR_TICKS);
-    remove(DSK_FILE);
+    /* A read that hit a critical error stopped short, so its rate means
+     * nothing; report the reason instead of a number. */
+    crit = ui_crit_take();
+    remove(dsk_path);
+    ui_crit_take();
+    if (crit >= 0 || bytes == 0) {
+        fail_why[4] = (crit >= 0) ? ui_crit_text(crit)
+                                  : "cannot read test file";
+        return RES_FAILED;
+    }
     if (el < 1) el = 1;
-    if (bytes == 0)
-        return -1;
     return kbps(bytes, el);
 }
 
@@ -665,10 +763,11 @@ static void run_all(void)
 {
     int i;
     for (i = 0; i < NBENCH; i++) {
+        fail_why[i] = NULL;
         prog_begin(i);
         switch (i) {
         case 0: results[i] = bench_cpu(); break;
-        case 1: results[i] = g_fpu ? bench_fpu() : -1; break;
+        case 1: results[i] = g_fpu ? bench_fpu() : RES_SKIPPED; break;
         case 2: results[i] = bench_mem(); break;
         case 3:
             results[i] = bench_vid();
@@ -684,6 +783,15 @@ static void run_all(void)
     ui_puts(BAR_X, RUN_Y + 1, "Suite complete.", UI_ATTR(C_LGREEN, C_BLUE));
     ui_puts(BAR_X, RUN_Y + 2,
             "Press S to save these scores as the new reference.", A_ITEM);
+    for (i = 0; i < NBENCH; i++) {
+        if (results[i] == RES_FAILED) {
+            char buf[80];
+            sprintf(buf, "%s failed: %.26s - the index uses the rest.",
+                    bench_name[i], fail_why[i] ? fail_why[i] : "unknown error");
+            ui_putlim(BAR_X, RUN_Y + 3, buf, BAR_W, A_WARN);
+            break;
+        }
+    }
     draw_index();
 }
 
@@ -701,31 +809,49 @@ static void load_prev(void)
         prev[i] = -1;
     for (p = 0; p < NSCOREP; p++) {
         if (ini_open(score_paths[p]) == INI_OK) {
+            /* Scores are longs: a memory score is past 32767 on anything
+             * faster than a 386SX, and ini_get_int is a 16-bit int here. */
             for (i = 0; i < NBENCH; i++)
-                prev[i] = ini_get_int("last", score_keys[i], -1);
-            prev_index = ini_get_int("last", "index", -1);
+                prev[i] = ini_get_long("last", score_keys[i], -1L);
+            prev_index = ini_get_long("last", "index", -1L);
             return;
         }
     }
 }
 
-static int save_scores(void)
+/* Returns 0, or -1 with *crit set to the INT 24h code behind the failure
+ * (-1 if there was none). */
+static int save_scores(int *crit)
 {
     FILE *fp = NULL;
-    int p, i;
+    int p, i, ok;
 
+    ui_crit_take();
     for (p = 0; p < NSCOREP; p++) {
-        fp = fopen(score_paths[p], "w");
+        /* Binary: the lines already end in \r\n, and text mode would
+         * turn each \n into another \r\n. */
+        fp = fopen(score_paths[p], "wb");
         if (fp != NULL)
             break;
     }
-    if (fp == NULL)
+    if (fp == NULL) {
+        *crit = ui_crit_take();
         return -1;
-    fprintf(fp, "; CASTALIA MARK saved scores\r\n[last]\r\n");
-    for (i = 0; i < NBENCH; i++)
-        fprintf(fp, "%s=%ld\r\n", score_keys[i], results[i]);
-    fprintf(fp, "index=%ld\r\n", castalia_index());
-    fclose(fp);
+    }
+    ok = fprintf(fp, "; CASTALIA MARK saved scores\r\n[last]\r\n") > 0;
+    for (i = 0; i < NBENCH && ok; i++)
+        ok = fprintf(fp, "%s=%ld\r\n", score_keys[i], results[i]) > 0;
+    if (ok)
+        ok = fprintf(fp, "index=%ld\r\n", castalia_index()) > 0;
+    if (fclose(fp) != 0)
+        ok = 0;
+    if (!ok) {
+        /* A half-written file would be read back as the reference. */
+        *crit = ui_crit_take();
+        remove(score_paths[p]);
+        ui_crit_take();
+        return -1;
+    }
     return 0;
 }
 
@@ -733,14 +859,17 @@ static int save_scores(void)
 
 int main(void)
 {
-    int i, key;
+    int i, key, crit = -1;
+    char msg[80];
 
     for (i = 0; i < NBENCH; i++)
         results[i] = 0;
     g_fpu = fpu_present();
-    load_prev();
 
+    /* ui_init() first: it installs the critical-error handler, and the
+     * saved scores may sit on a disk that is not ready. */
     ui_init();
+    load_prev();
     draw_screen();
 
     for (;;) {
@@ -753,13 +882,19 @@ int main(void)
             if (!have_run) {
                 ui_puts(BAR_X, RUN_Y + 1,
                         "Run the suite first (Enter).            ", A_HINT);
-            } else if (save_scores() == 0) {
+            } else if (save_scores(&crit) == 0) {
+                ui_fill(BAR_X, RUN_Y + 1, BAR_W, 1, ' ', A_DESKTOP);
                 ui_puts(BAR_X, RUN_Y + 1,
-                        "Scores saved as the new reference.      ",
+                        "Scores saved as the new reference.",
                         UI_ATTR(C_LGREEN, C_BLUE));
             } else {
-                ui_puts(BAR_X, RUN_Y + 1,
-                        "Could not write CASTMARK.SCR.           ", A_WARN);
+                if (crit >= 0)
+                    sprintf(msg, "Could not write CASTMARK.SCR: %s.",
+                            ui_crit_text(crit));
+                else
+                    strcpy(msg, "Could not write CASTMARK.SCR.");
+                ui_fill(BAR_X, RUN_Y + 1, BAR_W, 1, ' ', A_DESKTOP);
+                ui_puts(BAR_X, RUN_Y + 1, msg, A_WARN);
             }
         }
     }

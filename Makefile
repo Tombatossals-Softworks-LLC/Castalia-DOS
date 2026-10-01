@@ -117,6 +117,9 @@ $(BUILD)/xmsinfo.obj: $(COMMON)/XMSINFO.C $(COMMON)/XMSINFO.H
 $(BUILD)/viddet.obj: $(COMMON)/VIDDET.C $(COMMON)/VIDDET.H
 	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/VIDDET.C
 
+$(BUILD)/safeio.obj: $(COMMON)/SAFEIO.C $(COMMON)/SAFEIO.H
+	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/SAFEIO.C
+
 # --- LAUNCH.EXE -------------------------------------------------------
 $(BUILD)/launch.obj: src/launch/LAUNCH.C $(COMMON)/INI.H $(COMMON)/UI.H
 	$(CC) $(CFLAGS) -fo=$@ src/launch/LAUNCH.C
@@ -138,12 +141,12 @@ $(BUILD)/hwinfo.obj: src/hwinfo/HWINFO.C $(COMMON)/UI.H $(COMMON)/CPUDET.H $(COM
 $(BUILD)/hwinfo.exe: $(BUILD)/viddet.obj $(BUILD)/hwinfo.obj $(BUILD)/ui.obj $(BUILD)/cpudet.obj $(BUILD)/xmsinfo.obj
 	$(LINK) system dos name $@ file $(BUILD)/hwinfo.obj,$(BUILD)/viddet.obj,$(BUILD)/ui.obj,$(BUILD)/cpudet.obj,$(BUILD)/xmsinfo.obj
 
-# --- SETSOUND.EXE  (UI only) ------------------------------------------
-$(BUILD)/setsound.obj: src/setsound/SETSOUND.C $(COMMON)/UI.H $(COMMON)/SPK.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/setsound.obj: src/setsound/SETSOUND.C $(COMMON)/UI.H $(COMMON)/SPK.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/setsound/SETSOUND.C
 
-$(BUILD)/setsound.exe: $(BUILD)/setsound.obj $(BUILD)/ui.obj $(BUILD)/spk.obj
-	$(LINK) system dos name $@ file $(BUILD)/setsound.obj,$(BUILD)/ui.obj,$(BUILD)/spk.obj
+$(BUILD)/setsound.exe: $(BUILD)/setsound.obj $(BUILD)/ui.obj $(BUILD)/spk.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/setsound.obj,$(BUILD)/ui.obj,$(BUILD)/spk.obj,$(BUILD)/safeio.obj
 
 # --- MEMPROF.EXE  (INI + UI) ------------------------------------------
 $(BUILD)/memprof.obj: src/memprof/MEMPROF.C $(COMMON)/INI.H $(COMMON)/UI.H
@@ -152,40 +155,40 @@ $(BUILD)/memprof.obj: src/memprof/MEMPROF.C $(COMMON)/INI.H $(COMMON)/UI.H
 $(BUILD)/memprof.exe: $(BUILD)/memprof.obj $(OBJS_COMMON)
 	$(LINK) system dos name $@ file $(BUILD)/memprof.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj
 
-# --- SETUP.EXE  (UI + LOGO) -------------------------------------------
-$(BUILD)/setup.obj: src/setup/SETUP.C $(COMMON)/UI.H $(COMMON)/LOGO.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/setup.obj: src/setup/SETUP.C $(COMMON)/UI.H $(COMMON)/LOGO.H $(COMMON)/DIRW.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/setup/SETUP.C
 
-$(BUILD)/setup.exe: $(BUILD)/setup.obj $(BUILD)/ui.obj $(BUILD)/logo.obj
-	$(LINK) system dos name $@ file $(BUILD)/setup.obj,$(BUILD)/ui.obj,$(BUILD)/logo.obj
+$(BUILD)/setup.exe: $(BUILD)/setup.obj $(BUILD)/ui.obj $(BUILD)/logo.obj $(BUILD)/dirw.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/setup.obj,$(BUILD)/ui.obj,$(BUILD)/logo.obj,$(BUILD)/dirw.obj,$(BUILD)/safeio.obj
 
-# --- SAFEBOOT.EXE  (UI only) ------------------------------------------
-$(BUILD)/safeboot.obj: src/safeboot/SAFEBOOT.C $(COMMON)/UI.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/safeboot.obj: src/safeboot/SAFEBOOT.C $(COMMON)/UI.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/safeboot/SAFEBOOT.C
 
-$(BUILD)/safeboot.exe: $(BUILD)/safeboot.obj $(BUILD)/ui.obj
-	$(LINK) system dos name $@ file $(BUILD)/safeboot.obj,$(BUILD)/ui.obj
+$(BUILD)/safeboot.exe: $(BUILD)/safeboot.obj $(BUILD)/ui.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/safeboot.obj,$(BUILD)/ui.obj,$(BUILD)/safeio.obj
 
-# --- CFGEDIT.EXE  (UI only) -------------------------------------------
-$(BUILD)/cfgedit.obj: src/cfgedit/CFGEDIT.C $(COMMON)/UI.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/cfgedit.obj: src/cfgedit/CFGEDIT.C $(COMMON)/UI.H $(COMMON)/DIRW.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/cfgedit/CFGEDIT.C
 
-$(BUILD)/cfgedit.exe: $(BUILD)/cfgedit.obj $(BUILD)/ui.obj
-	$(LINK) system dos name $@ file $(BUILD)/cfgedit.obj,$(BUILD)/ui.obj
+$(BUILD)/cfgedit.exe: $(BUILD)/cfgedit.obj $(BUILD)/ui.obj $(BUILD)/dirw.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/cfgedit.obj,$(BUILD)/ui.obj,$(BUILD)/dirw.obj,$(BUILD)/safeio.obj
 
-# --- GAMECFG.EXE  (INI + UI) ------------------------------------------
-$(BUILD)/gamecfg.obj: src/gamecfg/GAMECFG.C $(COMMON)/INI.H $(COMMON)/UI.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/gamecfg.obj: src/gamecfg/GAMECFG.C $(COMMON)/INI.H $(COMMON)/UI.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/gamecfg/GAMECFG.C
 
-$(BUILD)/gamecfg.exe: $(BUILD)/gamecfg.obj $(OBJS_COMMON)
-	$(LINK) system dos name $@ file $(BUILD)/gamecfg.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj
+$(BUILD)/gamecfg.exe: $(BUILD)/gamecfg.obj $(OBJS_COMMON) $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/gamecfg.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj,$(BUILD)/safeio.obj
 
-# --- CASTFM.EXE  (UI + DIRW) ------------------------------------------
-$(BUILD)/castfm.obj: src/castfm/CASTFM.C $(COMMON)/UI.H $(COMMON)/DIRW.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/castfm.obj: src/castfm/CASTFM.C $(COMMON)/UI.H $(COMMON)/DIRW.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/castfm/CASTFM.C
 
-$(BUILD)/castfm.exe: $(BUILD)/castfm.obj $(BUILD)/ui.obj $(BUILD)/dirw.obj
-	$(LINK) system dos name $@ file $(BUILD)/castfm.obj,$(BUILD)/ui.obj,$(BUILD)/dirw.obj
+$(BUILD)/castfm.exe: $(BUILD)/castfm.obj $(BUILD)/ui.obj $(BUILD)/dirw.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/castfm.obj,$(BUILD)/ui.obj,$(BUILD)/dirw.obj,$(BUILD)/safeio.obj
 
 # --- CASTMARK.EXE  (UI + INI + CPUDET) --------------------------------
 $(BUILD)/castmark.obj: src/castmark/CASTMARK.C $(COMMON)/UI.H $(COMMON)/INI.H $(COMMON)/CPUDET.H
@@ -194,12 +197,12 @@ $(BUILD)/castmark.obj: src/castmark/CASTMARK.C $(COMMON)/UI.H $(COMMON)/INI.H $(
 $(BUILD)/castmark.exe: $(BUILD)/viddet.obj $(BUILD)/castmark.obj $(OBJS_COMMON) $(BUILD)/cpudet.obj $(BUILD)/xmsinfo.obj
 	$(LINK) system dos name $@ file $(BUILD)/castmark.obj,$(BUILD)/viddet.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj,$(BUILD)/cpudet.obj,$(BUILD)/xmsinfo.obj
 
-# --- CASTCOPY.EXE  (UI + DIRW) ----------------------------------------
-$(BUILD)/castcopy.obj: src/castcopy/CASTCOPY.C $(COMMON)/UI.H $(COMMON)/DIRW.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/castcopy.obj: src/castcopy/CASTCOPY.C $(COMMON)/UI.H $(COMMON)/DIRW.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/castcopy/CASTCOPY.C
 
-$(BUILD)/castcopy.exe: $(BUILD)/castcopy.obj $(BUILD)/ui.obj $(BUILD)/dirw.obj
-	$(LINK) system dos name $@ file $(BUILD)/castcopy.obj,$(BUILD)/ui.obj,$(BUILD)/dirw.obj
+$(BUILD)/castcopy.exe: $(BUILD)/castcopy.obj $(BUILD)/ui.obj $(BUILD)/dirw.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/castcopy.obj,$(BUILD)/ui.obj,$(BUILD)/dirw.obj,$(BUILD)/safeio.obj
 
 # --- CASTDOC.EXE  (UI only) -------------------------------------------
 $(BUILD)/castdoc.obj: src/castdoc/CASTDOC.C $(COMMON)/UI.H
@@ -247,12 +250,12 @@ $(BUILD)/help.obj: src/help/HELP.C $(COMMON)/UI.H $(COMMON)/INI.H
 $(BUILD)/help.exe: $(BUILD)/help.obj $(OBJS_COMMON)
 	$(LINK) system dos name $@ file $(BUILD)/help.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj
 
-# --- CASTEDIT.EXE  (UI only) ------------------------------------------
-$(BUILD)/castedit.obj: src/castedit/CASTEDIT.C $(COMMON)/UI.H
+# ---  -----------------------------------------------------------------
+$(BUILD)/castedit.obj: src/castedit/CASTEDIT.C $(COMMON)/UI.H $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ src/castedit/CASTEDIT.C
 
-$(BUILD)/castedit.exe: $(BUILD)/castedit.obj $(BUILD)/ui.obj
-	$(LINK) system dos name $@ file $(BUILD)/castedit.obj,$(BUILD)/ui.obj
+$(BUILD)/castedit.exe: $(BUILD)/castedit.obj $(BUILD)/ui.obj $(BUILD)/safeio.obj
+	$(LINK) system dos name $@ file $(BUILD)/castedit.obj,$(BUILD)/ui.obj,$(BUILD)/safeio.obj
 
 # --- CASTID.EXE  (UI + CPUDET) ----------------------------------------
 $(BUILD)/castid.obj: src/castid/CASTID.C $(COMMON)/UI.H $(COMMON)/CPUDET.H $(COMMON)/XMSINFO.H

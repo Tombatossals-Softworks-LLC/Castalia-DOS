@@ -48,22 +48,19 @@ else
 fi
 
 head "host unit tests compile (tests/unit)"
-if gcc -x c -std=c89 -fsyntax-only -Wall -Wextra -Werror \
-       -Isrc/common tests/unit/test_ini.c 2>/tmp/cc.$$; then
-    pass "tests/unit/test_ini.c"
-else
-    bad "tests/unit/test_ini.c"
-    sed 's/^/         /' /tmp/cc.$$
-fi
-# test_ui.c #includes UI.C, so it needs the DOS stubs as well.
-if gcc -x c -std=c89 -fsyntax-only -Wall -Wextra -Werror \
-       -Dfar= -Dnear= -I"$STUBS" -Isrc/common tests/unit/test_ui.c \
-       2>/tmp/cc.$$; then
-    pass "tests/unit/test_ui.c"
-else
-    bad "tests/unit/test_ui.c"
-    sed 's/^/         /' /tmp/cc.$$
-fi
+# Every test, not a hand-kept list: a list here once covered two of the
+# five.  Several tests #include the DOS module they test, so all of them
+# get the stubs; CASTLINK_TEST only matters to test_castlink.c.
+while IFS= read -r f; do
+    if gcc -x c -std=c89 -fsyntax-only -Wall -Wextra -Werror \
+           -Dfar= -Dnear= -DCASTLINK_TEST -I"$STUBS" -Isrc/common "$f" \
+           2>/tmp/cc.$$; then
+        pass "$f"
+    else
+        bad "$f"
+        sed 's/^/         /' /tmp/cc.$$
+    fi
+done < <(find tests/unit -name '*.c' | sort)
 rm -f /tmp/cc.$$
 
 # ---- 2. shell scripts ----------------------------------------------

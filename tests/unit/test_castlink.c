@@ -61,6 +61,11 @@ void ui_hbar(int x, int y, int w, int permille_,
              unsigned char attr, unsigned char dimattr)
 { (void)x; (void)y; (void)w; (void)permille_; (void)attr; (void)dimattr; }
 
+/* No real disk sits behind the receiver here, so no INT 24h error is
+ * ever pending; the file-error messages only need something to print. */
+int ui_crit_take(void) { return -1; }
+const char *ui_crit_text(int code) { (void)code; return "disk error"; }
+
 /* DOS services and the directory walker are reached only from
  * castlink_main(), which no test calls; they exist so the program links. */
 int int86(int intno, union REGS *inregs, union REGS *outregs)

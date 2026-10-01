@@ -12,6 +12,8 @@
 #ifndef CASTALIA_STUB_DOS_H
 #define CASTALIA_STUB_DOS_H
 
+#include <stddef.h>
+
 struct WORDREGS {
     unsigned short ax, bx, cx, dx, si, di, cflag, flags;
 };
@@ -30,12 +32,14 @@ int int86x(int intno, union REGS *inregs, union REGS *outregs,
            struct SREGS *segregs);
 void segread(struct SREGS *sregs);
 
+/* size_t, not unsigned long: a pointer fits size_t on both LP64 (Linux)
+ * and LLP64 (64-bit Windows, where long is only 32 bits). */
 #ifndef MK_FP
-#define MK_FP(seg, ofs) ((void *)(((unsigned long)(seg) << 16) | (unsigned)(ofs)))
+#define MK_FP(seg, ofs) ((void *)(((size_t)(seg) << 16) | (unsigned)(ofs)))
 #endif
 #ifndef FP_SEG
-#define FP_SEG(p) ((unsigned short)(((unsigned long)(void *)(p)) >> 16))
-#define FP_OFF(p) ((unsigned short)((unsigned long)(void *)(p)))
+#define FP_SEG(p) ((unsigned short)(((size_t)(void *)(p)) >> 16))
+#define FP_OFF(p) ((unsigned short)((size_t)(void *)(p)))
 #endif
 
 /* --- Open-Watcom-style directory search (host syntax-check only) ----

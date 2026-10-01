@@ -10,8 +10,10 @@
  * bars, transfer speed, and an optional read-back VERIFY pass (on by
  * default - the whole point is rescuing data from aging diskettes).
  *
- * Partial destination files are deleted on error or cancel, so the
- * hard disk never keeps a silently-truncated copy.
+ * Each file is written under a temporary name in the destination
+ * directory, verified there, and only then put in place of any older
+ * copy, so a read error or verify mismatch never costs the copy that
+ * was already on the hard disk, and no truncated file is ever left.
  *
  * Build (Open Watcom):
  *   wcl -0 -bt=dos -ml -os castcopy.c ..\common\ui.c ..\common\dirw.c
@@ -32,6 +34,7 @@
 #endif
 #include "../common/UI.H"
 #include "../common/DIRW.H"
+#include "../common/SAFEIO.H"
 
 #define MAX_ENT  512
 #define NAMELEN  13
@@ -233,7 +236,12 @@ static void join_path(char *out, const char *dir, const char *name)
     strcat(out, name);
 }
 
-/* Copy with progress.  Returns 0 ok, -1 read, -2 write, -3 verify. */
+/* Copy with progress.  Returns 0 ok, -1 read, -2 write, -3 verify,
+ * -5 the verified copy could not replace the old one.
+ *
+ * The data goes to a temporary file next to 'dname'.  Opening 'dname'
+ * itself would empty an existing copy before the diskette had given up
+ * a byte, and a bad sector later on would then lose both. */
 static int copy_one(const char *sname, const char *dname,
                     unsigned long fsize, unsigned long *done_total,
                     unsigned long grand_total, unsigned long t0)
@@ -243,11 +251,14 @@ static int copy_one(const char *sname, const char *dname,
     unsigned long done = 0;
     long el;
     char buf[64];
+    char tmp[SIO_PATH];
 
+    if (sio_tmpname(dname, tmp) != SIO_OK)
+        return -2;
     in = fopen(sname, "rb");
     if (in == NULL)
         return -1;
-    out = fopen(dname, "wb");
+    out = fopen(tmp, "wb");
     if (out == NULL) {
         fclose(in);
         return -2;
@@ -256,7 +267,7 @@ static int copy_one(const char *sname, const char *dname,
         if (fwrite(iobuf, 1, n, out) != n) {
             fclose(in);
             fclose(out);
-            remove(dname);
+            remove(tmp);
             return -2;
         }
         done += (unsigned long)n;
@@ -280,21 +291,26 @@ static int copy_one(const char *sname, const char *dname,
     if (ferror(in)) {
         fclose(in);
         fclose(out);
-        remove(dname);
+        remove(tmp);
         return -1;
     }
     fclose(in);
-    fclose(out);
+    /* The last buffer only reaches the disk here; a full disk shows up
+     * as a failed close, not as a short fwrite. */
+    if (sio_close(out) != 0) {
+        remove(tmp);
+        return -2;
+    }
 
     if (verify) {
         FILE *a = fopen(sname, "rb");
-        FILE *b = fopen(dname, "rb");
+        FILE *b = fopen(tmp, "rb");
         size_t na, nb;
         int bad = 0;
         if (a == NULL || b == NULL) {
             if (a) fclose(a);
             if (b) fclose(b);
-            remove(dname);
+            remove(tmp);
             return -3;
         }
         ui_puts(4, 15, "verifying...", A_HINT);
@@ -310,10 +326,13 @@ static int copy_one(const char *sname, const char *dname,
         fclose(b);
         ui_puts(4, 15, "            ", A_DESKTOP);
         if (bad) {
-            remove(dname);
+            remove(tmp);
             return -3;
         }
     }
+    /* Only a complete, verified copy replaces what was there. */
+    if (sio_replace(tmp, dname) != SIO_OK)
+        return -5;
     return 0;
 }
 
@@ -321,7 +340,7 @@ static void copy_tagged(int sel)
 {
     int i, tf, all = 0, copied = 0, skipped = 0, errors = 0;
     unsigned long tb, done_total = 0, t0;
-    char dst[112], buf[80];
+    char dst[112], buf[112];
     long el;
 
     tag_totals(&tf, &tb);
@@ -358,7 +377,7 @@ static void copy_tagged(int sel)
 
     t0 = ui_ticks();
     for (i = 0; i < nent; i++) {
-        int rc;
+        int rc = 0, crit;
         if (!ents[i].tag || ents[i].is_dir)
             continue;
 
@@ -369,7 +388,12 @@ static void copy_tagged(int sel)
         ui_puts(5, 16, "total:", A_PANEL);
 
         join_path(dst, dest, ents[i].name);
-        if (!all && file_exists(dst)) {
+        ui_crit_take();             /* report only this file's error */
+        /* A destination that is the source directory (or reaches it by
+         * another spelling) would mean writing over the file being read. */
+        if (sio_same(ents[i].name, dst)) {
+            rc = -4;
+        } else if (!all && file_exists(dst)) {
             int a = ask_overwrite(ents[i].name);
             /* repaint the panel the dialog covered */
             ui_fill(4, 11, 72, 9, ' ', A_PANEL);
@@ -381,17 +405,23 @@ static void copy_tagged(int sel)
             if (a == 2) all = 1;
         }
 
-        rc = copy_one(ents[i].name, dst, ents[i].size,
-                      &done_total, tb, t0);
+        if (rc == 0)
+            rc = copy_one(ents[i].name, dst, ents[i].size,
+                          &done_total, tb, t0);
         if (rc == 0) {
             copied++;
             ents[i].tag = 0;
         } else {
             errors++;
-            sprintf(buf, "ERROR on %s: %s", ents[i].name,
+            crit = ui_crit_take();  /* what the drive said, if anything */
+            sprintf(buf, "ERROR on %s: %s%s%s", ents[i].name,
                     (rc == -1) ? "read failed (bad diskette?)" :
                     (rc == -2) ? "write failed (disk full?)" :
-                                 "VERIFY MISMATCH - copy removed");
+                    (rc == -4) ? "source and destination are one file" :
+                    (rc == -5) ? "could not replace the old copy" :
+                                 "VERIFY MISMATCH - copy discarded",
+                    (crit >= 0) ? " - " : "",
+                    (crit >= 0) ? ui_crit_text(crit) : "");
             ui_putlim(5, 19, buf, 70, A_WARN);
             ui_puts(5, 18, "Press a key to continue with the rest...",
                     A_PANEL);

@@ -50,7 +50,7 @@ int dirw_isdir(void)           { return (g_ft.attrib & _A_SUBDIR) != 0; }
 
 int dirw_mkdir(const char *path)
 {
-#if defined(__WATCOMC__) || defined(__TURBOC__)
+#if defined(__WATCOMC__) || defined(__TURBOC__) || defined(_WIN32)
     return mkdir(path);
 #else
     return mkdir(path, 0777);   /* host syntax-check only */

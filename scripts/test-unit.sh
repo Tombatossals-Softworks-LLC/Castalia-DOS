@@ -16,6 +16,10 @@
 #  it is pointed at an ordinary array and every primitive is diffed
 #  against the per-cell implementation it replaced, because no CI job
 #  can look at a real VGA text screen.
+#
+#  And the shared SAFEIO module, run against real files in a scratch
+#  directory: every tool that rewrites CONFIG.SYS, GAMES.INI or a user
+#  file relies on its copy/replace leaving the old file intact on error.
 #  Needs only gcc.  Exit 0 = all green.
 # =====================================================================
 set -euo pipefail
@@ -64,6 +68,14 @@ gcc -x c -std=c89 -Wall -Wextra -Werror -Dfar= -Dnear= -DCASTLINK_TEST \
     -o "$OUT/test_castlink" tests/unit/test_castlink.c
 
 "$OUT/test_castlink"
+
+echo
+echo "== building tests/unit/test_safeio.c against src/common/SAFEIO.C =="
+gcc -x c -std=c89 -Wall -Wextra -Werror -DSAFEIO_TEST -Isrc/common \
+    -o "$OUT/test_safeio" tests/unit/test_safeio.c src/common/SAFEIO.C
+mkdir -p "$OUT/safeio"
+
+"$OUT/test_safeio" "$OUT/safeio"
 
 echo
 echo "== boot-banner rebrand tool (scripts/rebrand-dos.py) =="

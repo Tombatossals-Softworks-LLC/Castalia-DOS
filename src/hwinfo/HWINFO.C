@@ -12,13 +12,14 @@
  * Detection here is deliberately CONSERVATIVE and honest: it uses only
  * safe BIOS interrupts, DOS calls, and the multiplex interface - no blind
  * calls into possibly-absent drivers, and no fragile CPU-speed guessing.
- * Precise CPU-class detection needs a little assembly (see
- * docs/DIAGNOSTICS.md); this build reports the guaranteed baseline (a
- * 386-class CPU is the Castalia minimum) and refines it only where a
- * safe, no-assembly signal exists.
+ * CPU class and the coprocessor come from the shared CPUDET module,
+ * whose EFLAGS/CPUID and FNINIT/FNSTSW probes are machine code
+ * byte-encoded inside #pragma aux (see CPUDET.C and docs/DIAGNOSTICS.md);
+ * CPUID runs only after the ID-bit toggle proves it exists.
  *
- * Build (Open Watcom):
- *   wcl -0 -bt=dos -ml -os hwinfo.c ..\common\ini.c ..\common\ui.c
+ * Build (Open Watcom; the Makefile rule is authoritative):
+ *   wcl -0 -bt=dos -ml -os hwinfo.c ..\common\ui.c ..\common\cpudet.c
+ *       ..\common\xmsinfo.c ..\common\viddet.c
  *
  * C89 only.  No dynamic allocation.
  * =================================================================== */

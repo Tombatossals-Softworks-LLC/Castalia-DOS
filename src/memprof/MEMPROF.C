@@ -119,7 +119,9 @@ static void draw_detail(int sel)
 
     ui_putlim(x, y++, ini_get_def(sec, "summary", ""), w, A_ITEM);
     y++;
-    sprintf(line, "HIMEM %s   EMS %s   UMB %s",
+    /* The values come straight from PROFILES.INI and can be any length;
+     * 20 fixed characters plus three 16-character fields fit line[72]. */
+    sprintf(line, "HIMEM %.16s   EMS %.16s   UMB %.16s",
             ini_get_def(sec, "himem", "?"),
             ini_get_def(sec, "ems", "?"),
             ini_get_def(sec, "umb", "?"));
