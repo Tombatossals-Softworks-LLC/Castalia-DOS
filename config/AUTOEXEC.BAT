@@ -37,7 +37,6 @@ SET TEMP=C:\TEMP
 SET TMP=C:\TEMP
 SET DIRCMD=/O:GN /P
 SET HELPPATH=C:\CASTALIA\HELP
-IF NOT EXIST C:\TEMP\NUL MKDIR C:\TEMP
 
 REM ---- Castalia prompt -------------------------------------------------
 REM  Plain ASCII on purpose: no ANSI driver is loaded in any profile, so
@@ -45,7 +44,12 @@ REM  colour escapes would print as raw garbage instead of colouring.
 PROMPT [CASTALIA $P]$G
 
 REM ---- Safe Mode: minimal, stop here ---------------------------------
+REM  Before anything that writes to the disk: SAFE is the profile you boot
+REM  when the disk itself is suspect.
 IF "%CASTPROFILE%"=="SAFE" GOTO SAFE
+
+REM  SETUP creates C:\TEMP; this only covers a system copied by hand.
+IF NOT EXIST C:\TEMP\NUL MKDIR C:\TEMP
 
 REM ---- Keyboard layout (optional; edit to your locale) ---------------
 IF EXIST C:\DOS\KEYB.EXE C:\DOS\KEYB.EXE US,,C:\DOS\KEYBOARD.SYS >NUL
@@ -86,10 +90,12 @@ GOTO BANNER
 
 REM =====================================================================
 :WIN3X
-REM  Mouse + disk cache help Windows.  A SmartDrive-style cache loaded low
-REM  is fine here; 1 MB cache, 0 write-behind for safety on real hardware.
+REM  Mouse + disk cache help Windows.  No cache ships with Castalia; this
+REM  uses SMARTDRV only if you put one in C:\DOS.  "C" caches drive C:
+REM  for reads only (no write-behind, so nothing is lost on a reset);
+REM  "1024 0" is a 1 MB cache and the size Windows may shrink it to.
 IF EXIST C:\CASTALIA\DRV\CTMOUSE.EXE LH C:\CASTALIA\DRV\CTMOUSE.EXE >NUL
-IF EXIST C:\DOS\SMARTDRV.EXE LH C:\DOS\SMARTDRV.EXE 1024 0
+IF EXIST C:\DOS\SMARTDRV.EXE LH C:\DOS\SMARTDRV.EXE C 1024 0
 ECHO.
 ECHO   Windows 3.x profile ready.  Type WIN to start Windows, or use the
 ECHO   Castalia menu.  (Enhanced mode needs a 386DX or better.)
