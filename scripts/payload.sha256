@@ -1,0 +1,22 @@
+# Pinned SHA-256 of every upstream archive the build downloads.
+# fetch-payload.sh and build-kernel.sh refuse a file that does not match,
+# whether it was just downloaded or came from the cache.  When an upstream
+# archive legitimately changes, review the new one and update its line here
+# in the same commit.  Format: sha256, two spaces, cache file name.
+75a4e11a7fce6f124e20927b3022b4b715a2a3f7324c5f5bfea42d90d80eb072  FD13-FloppyEdition.zip
+f6eea42ed25b2a5b7941846bbb5d99a823b434c3df7701beb336883e76e4af6e  ke2043s.zip
+1efdba830a473891bf4c5c81e1858d86c247a0c2a03f00d69b5f40969c442905  kernel.zip
+25fef0309e94e87b88b634452b780bd2821fb6d94b0d0e149ad97633ea7d6be7  freecom.zip
+5f6f84fab35132cc7928137e0f350660cb7ff06d23da18e1b5caceed15ea7b8f  fdisk.zip
+9bd13d1cfa2084020bf37e8e6b61a05e8413629cf6d7f2d2779819e7b1f32bd4  format.zip
+4090eb3b08a283cf3fc974c72ab6eb5105bf2b5f27e6bd8dfe6682bd0c3605d1  mem.zip
+33c43434964d2ae08cf868d5ea54760300588c9c2ea5e50e7936cecebf60fe52  xcopy.zip
+dc5f3f5ed14ae2f9d5b24e1768d58206dd90c9f4c10c7cf7d4806fefd7b17b29  chkdsk.zip
+ace5462192e2ad47a52bb118a73fdef6914043aa3c9f6cb322334d96715d77a0  himemx.zip
+ee1993dbbc736041f802370e8a15220304f03b522765827d65e937e285e4e341  jemm.zip
+9e88aeafeb6ff008f3fb5f793c74197143ec0b1c48e772a631a744c51408b930  shsucdx.zip
+a891124cd5b13e8141778fcae718f3b2667b0a49727ce92b782ab11a8c4bb63a  ctmouse.zip
+bd4d67ff356252296c05f437f7781446557c4f6cce745cbccbedb046ae497a52  uide.zip
+2e22a2a9d4f9b44737d907fb77740e01bd3acc82ec18a4c4b3070eb3192a05fe  unzip.zip
+3beca581994900917471ea36a4049974ba1f9edee9c30bf03111d7ee5f1ed154  zip.zip
+0bc98f44f85df84d594de8d730f3c2572b50725cbae0b533e247539a40dc1ecc  cwsdpmi.zip

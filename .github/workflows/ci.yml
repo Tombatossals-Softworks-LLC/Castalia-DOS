@@ -9,6 +9,10 @@ name: CI
 on:
   push:
 
+# Nothing here writes to the repository; artifacts need no extra scope.
+permissions:
+  contents: read
+
 jobs:
   # -------------------------------------------------------------------
   # Fast gate: C89 syntax of every DOS source (host stubs), shell lint,
@@ -18,7 +22,7 @@ jobs:
     name: Repository gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Run repository checks
         run: bash scripts/check.sh
 
@@ -31,21 +35,21 @@ jobs:
     name: Unit tests (host)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build and run unit tests
         run: bash scripts/test-unit.sh
 
   # -------------------------------------------------------------------
-  # The real 16-bit DOS build with Open Watcom: all 20 tools plus the
-  # DOS-side smoke test program.  Verified (MZ headers) and uploaded.
+  # The real 16-bit DOS build with Open Watcom: every tool plus the
+  # DOS-side test programs.  Verified (MZ headers) and uploaded.
   # -------------------------------------------------------------------
   build:
     name: DOS build (Open Watcom)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Open Watcom V2
-        uses: open-watcom/setup-watcom@v1
+        uses: open-watcom/setup-watcom@f0c24a936512429598af01e37fb4a96e8faece74 # v1
         with:
           version: "2.0"
       - name: Install NASM (for the kernel rebuild)
@@ -69,7 +73,7 @@ jobs:
       - name: Rebuild the FreeDOS kernel with the CASTALIA sign-on
         run: bash scripts/build-kernel.sh
       - name: Upload tools + rebranded kernel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: castalia-tools
           path: |
@@ -83,17 +87,17 @@ jobs:
   # and BOOT it, asserting the AUTOEXEC marker comes back.
   #
   # The uploaded image is a CI test artifact (it contains GPL FreeDOS
-  # binaries); public releases must ship sources per
-  # docs/LICENSE-STRATEGY.md.
+  # binaries), so the matching sources archive is uploaded beside it,
+  # as a public release must do (docs/LICENSE-STRATEGY.md).
   # -------------------------------------------------------------------
   e2e:
     name: E2E (DOS smoke + image + boot)
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Download built tools
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: castalia-tools
           path: build
@@ -111,12 +115,14 @@ jobs:
           #  video-adapter probe against anything but VGA.
           sudo apt-get install -y -qq dosbox dosbox-x mtools nasm qemu-system-x86
       - name: Cache FreeDOS downloads
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .payload-cache
-          key: freedos-payload-fd13-v1
-      - name: Fetch the FreeDOS payload
-        run: bash scripts/fetch-payload.sh
+          # Tied to the pinned digests, so changing a pin starts a fresh
+          # cache; fetch-payload.sh re-checks every cached file anyway.
+          key: freedos-payload-fd13-${{ hashFiles('scripts/payload.sha256') }}
+      - name: Fetch the FreeDOS payload (with the GPL sources)
+        run: bash scripts/fetch-payload.sh --with-sources
       - name: DOS smoke test (SMOKE.EXE in headless DOSBox)
         run: bash scripts/test-dos.sh
       - name: Video-adapter detection (VIDDET vs 11 emulated adapters)
@@ -132,10 +138,11 @@ jobs:
       - name: Boot test (image boots to AUTOEXEC in DOSBox)
         run: bash scripts/test-boot.sh dist/castalia-ci.img
       - name: Upload floppy image (CI test artifact)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: castalia-floppy-image
           path: |
             dist/castalia-ci.img
             dist/castalia-ci.img.sha256
+            dist/castalia-ci-sources.zip
           if-no-files-found: error
