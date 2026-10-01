@@ -18,7 +18,9 @@
  * deleted file's clusters and COPIES them out to a DIFFERENT drive that
  * you choose.  A destination on the source drive is refused, because
  * writing there could land on the very clusters still holding your
- * deleted file.
+ * deleted file.  "The source drive" means the VOLUME, not the letter:
+ * SUBST, JOIN and ASSIGN can give it a second name, and on a one-floppy
+ * PC B: is the same diskette as A:, so both are checked (see dest_ok).
  *
  * NO UNFORMAT.  Unformat has to rebuild the boot sector, the FAT and the
  * root directory OF THE DAMAGED DISK - it cannot be done without writing
@@ -406,19 +408,26 @@ static int disk_open(void)
     geo_spt    = 0;                 /* forget the previous volume's shape */
     geo_heads  = 0;
 
+    /* secbuf still holds the PREVIOUS drive's boot sector.  A kernel
+     * that does not know 7305h may return with carry clear and read
+     * nothing, and that stale sector would then pass looks_like_bpb()
+     * and parse_bpb() as this drive's.  Zeros fail both. */
     read_mode = 0;
+    memset(secbuf, 0, SECSIZE);
     rc0 = read_7305(0UL, 1u, secbuf);
     if (rc0 == 0 && looks_like_bpb())
         return 0;
     /* Either 7305h is missing (older kernel) or it handed back something
      * that is not a boot sector; try the IOCTL path before giving up. */
     read_mode = 1;
+    memset(secbuf, 0, SECSIZE);
     rc1 = read_ioctl(0UL, 1u, secbuf);
     if (rc1 == 0)
         return 0;
     if (rc0 == 0) {                 /* 7305h did read *something*: keep it
                                      * and let parse_bpb say what it is. */
         read_mode = 0;
+        memset(secbuf, 0, SECSIZE);
         return read_7305(0UL, 1u, secbuf);
     }
     return rc0;
@@ -740,14 +749,84 @@ static int dest_drive_index(const char *path)
     return cur_drive();             /* no letter: the DOS default drive   */
 }
 
-/* THE refusal.  A destination on the source drive could land on exactly
- * the clusters we are about to read back. */
+/* INT 21h AH=60h (TRUENAME): the drive a path really lives on, after
+ * SUBST, JOIN and ASSIGN have had their say.  Returns 0 = A: ..., -2 for
+ * a name with no drive letter (a network \\SERVER path: not a local
+ * volume, so never the source), -1 if DOS cannot tell us (DOS 2.x, or a
+ * path it rejects).  The path does not have to exist yet. */
+static int true_drive(const char *path)
+{
+    static char in[80], out[128];
+    union REGS r;
+    struct SREGS s;
+    int c;
+
+    strncpy(in, path, sizeof(in) - 1);
+    in[sizeof(in) - 1] = '\0';
+    out[0] = '\0';
+    memset(&r, 0, sizeof(r));
+    segread(&s);
+    s.ds   = FP_SEG((void far *)in);
+    r.x.si = FP_OFF((void far *)in);
+    s.es   = FP_SEG((void far *)out);
+    r.x.di = FP_OFF((void far *)out);
+    r.h.ah = 0x60;
+    int86x(0x21, &r, &r, &s);
+    /* DOS 2.x knows no AH=60h and returns without carry or output, so an
+     * empty answer counts as "unknown", not as "not local". */
+    if (r.x.cflag || out[0] == '\0')
+        return -1;
+    if (out[1] != ':')
+        return -2;
+    c = out[0];
+    if (c >= 'a' && c <= 'z')
+        c -= 32;
+    return (c >= 'A' && c <= 'Z') ? c - 'A' : -1;
+}
+
+/* THE refusal.  A destination on the source volume could land on exactly
+ * the clusters we are about to read back.  The letters alone do not say
+ * that: SUBST X: C:\TMP makes X: the C: volume, JOIN puts a whole drive
+ * under a directory of another, and ASSIGN renames one drive as another,
+ * so both ends are canonicalised and ANY overlap between the source's
+ * names and the destination's is refused - a false refusal costs the
+ * user a retype, a missed one costs the files. */
 static int dest_ok(void)
 {
-    if (dest_drive_index(dest) == src_drive) {
-        notify("REFUSED: that destination is on the SOURCE drive.",
-               "Writing there can overwrite the very clusters that still",
-               "hold your deleted files.  Choose a different drive.");
+    char root[4];
+    int dd = dest_drive_index(dest);
+    int sc, dc;
+
+    sprintf(root, "%c:\\", 'A' + src_drive);
+    sc = true_drive(root);
+    dc = true_drive(dest);
+    if (dc == -1) {                 /* the path itself was rejected:      */
+        sprintf(root, "%c:\\", 'A' + dd);  /* at least resolve its drive */
+        dc = true_drive(root);
+    }
+    if (dd == src_drive || dc == src_drive ||
+        (sc >= 0 && (sc == dd || sc == dc))) {
+        if (dd == src_drive)
+            notify("REFUSED: that destination is on the SOURCE drive.",
+                   "Writing there can overwrite the very clusters that still",
+                   "hold your deleted files.  Choose a different drive.");
+        else
+            notify("REFUSED: that drive is the SOURCE under another name.",
+                   "SUBST, JOIN or ASSIGN maps it onto the source volume;",
+                   "writing there can overwrite your deleted files.");
+        return 0;
+    }
+    /* One floppy drive: DOS still offers B: as a second name for the
+     * same physical drive.  It asks for a disk swap, but nothing makes
+     * the user do one.  pick_drive() already hides that B: as a source;
+     * the destination is typed freely, so it is caught here.  INT 11h
+     * bits 6-7 = 0 says there is only the one drive. */
+    if (floppy_count() == 1 &&
+        (src_drive <= 1 || (sc >= 0 && sc <= 1)) &&
+        (dd <= 1 || (dc >= 0 && dc <= 1))) {
+        notify("REFUSED: this PC has ONE floppy drive.",
+               "A: and B: are two names for it, so that destination is",
+               "the source drive.  Choose a hard disk or another drive.");
         return 0;
     }
     return 1;
@@ -773,7 +852,9 @@ static int file_exists(const char *p)
 
 /* Losing the first letter makes collisions likely (PANEL.TXT and
  * DANEL.TXT both become _ANEL.TXT), so a clashing name gets a numeric
- * tail and the summary reports how many were renamed. */
+ * tail and the summary reports how many were renamed.  Returns 0 if the
+ * plain name was free, 1 if a tail was added, -1 if 01..99 are all
+ * taken - the caller then skips the file rather than overwrite one. */
 static int unique_path(char *out, const char *base)
 {
     char stem[16], ext[8], cand[20];
@@ -802,7 +883,7 @@ static int unique_path(char *out, const char *base)
         if (!file_exists(out))
             return 1;
     }
-    return 1;                       /* give up uniquifying; caller reports */
+    return -1;
 }
 
 /* --- Screens ------------------------------------------------------------ */
@@ -1080,9 +1161,19 @@ static int recover_one(const DENT *d, const char *path,
         if ((unsigned long)n > want)  n = (unsigned)want;
 
         if (disk_read(lba, n, iobuf) != 0) {
-            fclose(fp);
-            remove(path);
-            return -1;
+            /* As in scan_root: one bad sector fails the whole 8 KB run,
+             * so re-read it a sector at a time before giving up.  Only a
+             * sector that still will not come back fails the file - a
+             * copy with a hole in it is never kept. */
+            unsigned s;
+            for (s = 0u; s < n; s++) {
+                if (disk_read(lba + (unsigned long)s, 1u,
+                              iobuf + s * bytes_per_sec) != 0) {
+                    fclose(fp);
+                    remove(path);
+                    return -1;
+                }
+            }
         }
         bytes = (unsigned long)n * (unsigned long)bytes_per_sec;
         if (bytes > remaining)
@@ -1168,11 +1259,12 @@ static void recover_tagged(void)
     recover_panel();
     t0 = ui_ticks();
     for (i = 0; i < n_del; i++) {
-        int rc;
+        int rc, up, crit;
         if (!dents[i].tag)
             continue;
 
-        if (unique_path(path, dents[i].name))
+        up = unique_path(path, dents[i].name);
+        if (up > 0)
             renamed++;
         sprintf(buf, "%-12.12s %lu bytes  ->  %-24.24s",
                 dents[i].name, dents[i].size, path);
@@ -1180,7 +1272,9 @@ static void recover_tagged(void)
         ui_puts(5, 13, "file: ", A_PANEL);
         ui_puts(5, 16, "total:", A_PANEL);
 
-        rc = recover_one(&dents[i], path, &done_total, tb, t0);
+        (void)ui_crit_take();           /* only this file's errors count */
+        rc = (up < 0) ? -4 : recover_one(&dents[i], path, &done_total, tb, t0);
+        crit = ui_crit_take();
         if (rc == 0 || rc == 1) {
             done++;
             if (rc == 1)
@@ -1192,9 +1286,18 @@ static void recover_tagged(void)
             break;
         } else {
             errors++;
-            sprintf(buf, "ERROR on %s: %s", dents[i].name,
-                    (rc == -1) ? "source read failed (bad sectors?)"
-                               : "destination write failed (disk full?)");
+            if (rc == -4)
+                sprintf(buf, "SKIPPED %s: names 01..99 all taken in the "
+                        "destination", dents[i].name);
+            else if (crit >= 0)         /* DOS said what went wrong       */
+                sprintf(buf, "ERROR on %s: %s %s", dents[i].name,
+                        (rc == -1) ? "source read failed -"
+                                   : "destination write failed -",
+                        ui_crit_text(crit));
+            else
+                sprintf(buf, "ERROR on %s: %s", dents[i].name,
+                        (rc == -1) ? "source read failed (bad sectors?)"
+                                   : "destination write failed (disk full?)");
             ui_putlim(5, 19, buf, 70, A_WARN);
             ui_puts(5, 18, "Press a key to continue with the rest...",
                     A_PANEL);

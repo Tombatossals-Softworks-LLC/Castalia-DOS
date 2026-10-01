@@ -46,6 +46,13 @@
  *   'D' DATA   up to 1024 raw file bytes, in order.
  *   'E' EOF    0-3 bytes sent LE32, 4-5 CRC-16 of the whole file, so
  *              the receiver verifies instead of keeping a corrupt copy.
+ *              A file that fails that check, could not be written in
+ *              full, or never got its EOF (link lost, Esc, a new FILE
+ *              header) is deleted: only verified files stay on disk.
+ *              The sender withholds the EOF of a file it could not read
+ *              to the end, so a short read is never verified as whole.
+ *              An existing file is never overwritten - the new one is
+ *              saved as NAME~n.EXT, or refused once ~1..~99 are taken.
  *   'Z' DONE   end of the job.   'X' ABORT  the far end cancelled.
  *
  * There is deliberately no autobaud: the user picks the same speed on
@@ -589,7 +596,7 @@ static void summary(const char *headline)
             n_retry, n_crc, n_line, n_renamed);
     ui_puts(x + 3, y + 7, line, A_PANEL);
     if (n_bad > 0) {
-        sprintf(line, "%d file(s) FAILED verification - check them!", n_bad);
+        sprintf(line, "%d file(s) FAILED - see the transfer log.", n_bad);
         ui_putlim(x + 3, y + 8, line, w - 6, A_WARN);
     }
     ui_puts(x + 3, y + 10, "Press any key to return.", A_PANEL);
@@ -651,7 +658,8 @@ static void sanitize_name(char *n)
 }
 
 /* Never clobber an existing file: fold NAME.EXT into NAME~1.EXT and so
- * on.  'name' needs room for 14 bytes.  Returns 1 if it was renamed. */
+ * on.  'name' needs room for 14 bytes.  Returns 0 if the name was free,
+ * 1 if it was renamed, -1 if ~1..~99 are all taken too. */
 static int unique_name(char *name)
 {
     char base[NAMELEN + 4], ext[8], cand[24], *dot;
@@ -675,7 +683,9 @@ static int unique_name(char *name)
         sprintf(cand, "%.*s~%d%s", bl, base, n, ext);
         if (!file_exists(cand)) { strcpy(name, cand); return 1; }
     }
-    return 0;                           /* 99 collisions: keep the name */
+    /* Out of names.  Handing back the original would overwrite a file
+     * the user already had, which is the one thing this must not do. */
+    return -1;
 }
 
 /* --- Setup screen --------------------------------------------------------- */
@@ -901,9 +911,17 @@ static int send_one(const char *name, unsigned long fsize)
         xfer_update(name, done, fsize);
     }
     if (ferror(fp)) {
-        sprintf(msg, "READ ERROR on %s - truncated at %lu bytes", name, done);
+        /* No EOF for this file.  The EOF carries the size and CRC of what
+         * was SENT, so it would verify a truncated copy as good; without
+         * it the receiver deletes the partial file when the next FILE
+         * header or the DONE arrives. */
+        sprintf(msg, "READ ERROR on %s at %lu bytes - not sent", name, done);
         log_add(msg);
         if (n_bad < 32000) n_bad++;
+        if (fsize > done)
+            tot_done += fsize - done;       /* keep the total bar honest */
+        fclose(fp);
+        return SER_OK;
     }
     fclose(fp);
 
@@ -1005,12 +1023,36 @@ static void wait_screen(unsigned long waited)
     ui_putlim(x + 3, y + 7, line, w - 6, A_PANEL);
 }
 
-/* Handle one FILE header: name it safely, never clobber, open it. */
-static void begin_file(FILE **out, char *name, int len,
-                       unsigned long *fsize, unsigned long *fdone,
-                       unsigned *fcrc)
+/* Why a DOS file call failed: the INT 24h code if there was one (write
+ * protect, drive not ready, ...), else the usual suspect 'dflt'. */
+static const char *why_failed(const char *dflt)
+{
+    int code = ui_crit_take();
+    return (code >= 0) ? ui_crit_text(code) : dflt;
+}
+
+/* The file this run created under 'name' never verified: delete it, so
+ * a truncated or corrupt copy cannot pass for the real thing later. */
+static void drop_partial(const char *name, int *created, const char *why)
 {
     char msg[80];
+
+    if (!*created) return;
+    *created = 0;
+    remove(name);
+    sprintf(msg, "NOT SAVED  %-13.13s - %s, removed", name, why);
+    log_add(msg);
+    if (n_bad < 32000) n_bad++;
+}
+
+/* Handle one FILE header: name it safely, never clobber, open it.
+ * '*created' is set while 'name' is a file of ours not yet verified. */
+static void begin_file(FILE **out, char *name, int len,
+                       unsigned long *fsize, unsigned long *fdone,
+                       unsigned *fcrc, int *created)
+{
+    char msg[80];
+    int un;
 
     if (len < 5) {                          /* size word + at least "x\0" */
         log_add("malformed FILE header ignored");
@@ -1020,26 +1062,39 @@ static void begin_file(FILE **out, char *name, int len,
     if (*out != NULL) {                     /* sender skipped an EOF     */
         fclose(*out);
         *out = NULL;
-        if (n_bad < 32000) n_bad++;
     }
+    drop_partial(name, created, "no EOF");
     *fsize = get_u32(frm + HDRLEN);
     frm[HDRLEN + len - 1] = 0;              /* payload is NUL-terminated */
     strncpy(name, (const char *)(frm + HDRLEN + 4), NAMELEN - 1);
     name[NAMELEN - 1] = '\0';
     sanitize_name(name);
-    if (unique_name(name)) {
+    *fdone = 0UL;
+    *fcrc = 0xFFFFu;
+    un = unique_name(name);
+    if (un < 0) {
+        /* The data still has to be ACKed and read off the wire, but it
+         * goes nowhere: *out stays NULL and *created 0, so nothing of
+         * the user's is touched when this file's EOF arrives. */
+        sprintf(msg, "REFUSED %s - it and ~1..~99 all exist", name);
+        log_add(msg);
+        if (n_bad < 32000) n_bad++;
+        return;
+    }
+    if (un > 0) {
         n_renamed++;
         sprintf(msg, "exists already -> saving as %s", name);
         log_add(msg);
     }
-    *fdone = 0UL;
-    *fcrc = 0xFFFFu;
+    (void)ui_crit_take();                   /* forget older errors       */
     *out = fopen(name, "wb");
     if (*out == NULL) {
-        sprintf(msg, "CANNOT WRITE %s - disk full or read-only?", name);
+        sprintf(msg, "CANNOT WRITE %s - %s", name,
+                why_failed("disk full or read-only?"));
         log_add(msg);
         if (n_bad < 32000) n_bad++;
     } else {
+        *created = 1;
         sprintf(msg, "receiving %-13.13s %lu bytes", name, *fsize);
         log_add(msg);
     }
@@ -1054,6 +1109,7 @@ static void do_receive(void)
     unsigned fcrc = 0xFFFFu;
     int rc, len = 0, running = 1, quiet = 0;
     int wfail = 0;                  /* this file could not be written  */
+    int created = 0;                /* 'name' is ours and not verified */
 
     tx_seq = rx_seq = 0;        /* a fresh session starts at bit 0 */
 
@@ -1122,7 +1178,7 @@ static void do_receive(void)
         quiet = 0;
 
         if (rc == F_FILE) {
-            begin_file(&out, name, len, &fsize, &fdone, &fcrc);
+            begin_file(&out, name, len, &fsize, &fdone, &fcrc, &created);
             wfail = (out == NULL);      /* could not even be created   */
             xfer_update(name, 0UL, fsize);
         } else if (rc == F_DATA) {
@@ -1131,7 +1187,8 @@ static void do_receive(void)
                 fclose(out);
                 out = NULL;
                 wfail = 1;
-                sprintf(msg, "WRITE FAILED on %s - disk full?", name);
+                sprintf(msg, "WRITE FAILED on %s - %s", name,
+                        why_failed("disk full?"));
                 log_add(msg);
             }
             fcrc = crc16_upd(fcrc, frm + HDRLEN, len);
@@ -1141,28 +1198,49 @@ static void do_receive(void)
         } else if (rc == F_EOF) {
             unsigned long claimed = get_u32(frm + HDRLEN);
             unsigned wantcrc = get_u16(frm + HDRLEN + 4);
-            if (out != NULL) { fclose(out); out = NULL; }
+            if (out != NULL) {
+                /* The C library and DOS hold the tail of the file in
+                 * their buffers until the close, so a full disk can first
+                 * show up here; the file is "ok" only if the close is. */
+                if (fclose(out) != 0) {
+                    wfail = 1;
+                    sprintf(msg, "CLOSE FAILED on %s - %s", name,
+                            why_failed("disk full?"));
+                    log_add(msg);
+                }
+                out = NULL;
+            }
             if (wfail) {
                 /* The bytes arrived intact - fdone and fcrc track what
                  * came off the wire - but they never reached the disk,
                  * so the sender's EOF figures would still match and this
                  * would have been logged "ok".  Say what happened and
                  * take the partial file away, as CASTCOPY does. */
-                remove(name);
-                sprintf(msg, "NOT SAVED  %-13.13s - write failed, removed",
-                        name);
-                log_add(msg);
-                if (n_bad < 32000) n_bad++;
-            } else if (claimed != fdone || wantcrc != fcrc) {
+                if (created) {
+                    drop_partial(name, &created, "write failed");
+                } else {
+                    sprintf(msg, "NOT SAVED  %-13.13s - nothing written",
+                            name);
+                    log_add(msg);
+                }
+            } else if (!created || claimed != fdone || wantcrc != fcrc) {
+                /* A corrupt copy under the real name would be taken for
+                 * the real file later, so it goes (see the header).
+                 * !created: an EOF with no FILE header before it. */
                 sprintf(msg, "VERIFY FAILED on %s (%lu of %lu bytes)",
                         name, fdone, claimed);
                 log_add(msg);
-                if (n_bad < 32000) n_bad++;
+                if (created)
+                    drop_partial(name, &created, "bad CRC");
+                else if (n_bad < 32000)
+                    n_bad++;
             } else {
+                created = 0;                /* verified: it stays        */
                 files_done++;
                 sprintf(msg, "ok        %-13.13s %lu bytes", name, fdone);
                 log_add(msg);
             }
+            wfail = 0;
             xfer_update(name, fdone, fsize);
         } else if (rc == F_DONE) {
             running = 0;
@@ -1173,10 +1251,9 @@ static void do_receive(void)
         /* Any other type is ignored - it was ACKed, which is harmless. */
     }
 
-    if (out != NULL) {                      /* interrupted mid-file      */
+    if (out != NULL)                        /* interrupted mid-file      */
         fclose(out);
-        if (n_bad < 32000) n_bad++;
-    }
+    drop_partial(name, &created, "interrupted");
     if (tot_files < files_done) tot_files = files_done;
     summary(verdict);
 }

@@ -215,7 +215,9 @@ static void draw_cell(int x, int y)
 
 static void draw_hud(void)
 {
-    char buf[40];
+    /* Four ints of up to six characters each ("-32768") plus the labels
+     * come to 55 bytes; 40 overflowed once moves and pushes passed 999. */
+    char buf[64];
     ui_fill(0, 1, SCR_W, 1, ' ', A_DESKTOP);
     sprintf(buf, "Chamber %d/%d    Moves %d    Pushes %d",
             level + 1, NLEVELS, moves, pushes);

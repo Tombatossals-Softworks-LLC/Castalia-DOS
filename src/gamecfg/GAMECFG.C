@@ -7,8 +7,14 @@
  * Add and edit game entries in GAMES.INI without hand-editing the file.
  * It loads every game, lets you edit fields in a form (text fields via an
  * inline editor; profile/sound by cycling; mouse/CD as yes/no), add a new
- * game, or delete one, then writes the whole GAMES.INI back.  It backs the
- * file up to C:\CASTALIA\BACKUP before saving.
+ * game, or delete one, then writes the whole GAMES.INI back.  The first
+ * save of a run backs the file up to C:\CASTALIA\BACKUP, and every save
+ * writes a complete new file before swapping it in.
+ *
+ * Because a save rewrites the whole file, anything that was not loaded
+ * would be lost by it.  A GAMES.INI that cannot be read in full opens
+ * read-only, and one with more games or longer fields than this editor
+ * holds is only saved after the user agrees to drop the excess.
  *
  * The launcher (LAUNCH.EXE) reads the same file; this is its editor.
  *
@@ -23,8 +29,11 @@
 #include <string.h>
 #include "../common/INI.H"
 #include "../common/UI.H"
+#include "../common/SAFEIO.H"
 
 #define MAX_GAMES 64
+#define GAMES_INI "C:\\CASTALIA\\CFG\\GAMES.INI"
+#define GAMES_BAK "C:\\CASTALIA\\BACKUP\\GAMES.INI"
 
 typedef struct {
     char id[24];
@@ -43,6 +52,9 @@ static GAME games[MAX_GAMES];
 static int  ngames = 0;
 static int  dirty = 0;
 static char ini_path[80];       /* where GAMES.INI was loaded/saved */
+static int  read_only = 0;      /* the file exists but did not load  */
+static int  lossy = 0;          /* entries/fields that did not fit   */
+static int  backed_up = 0;      /* GAMES_BAK written in this run     */
 
 static const char *profiles[] = { "CLEAN", "XMS", "EMS", "CDROM" };
 #define NPROF 4
@@ -51,35 +63,13 @@ static const char *sounds[] = { "NONE","SPKR","ADLIB","SB","SBPRO","SB16" };
 
 /* --- small helpers -------------------------------------------------- */
 
-static void copystr(char *dst, const char *src, int size)
+/* Bounded copy.  Returns 1 if 'src' had to be cut to fit. */
+static int copystr(char *dst, const char *src, int size)
 {
-    if (src == NULL) { dst[0] = '\0'; return; }
+    if (src == NULL) { dst[0] = '\0'; return 0; }
     strncpy(dst, src, (size_t)(size - 1));
     dst[size - 1] = '\0';
-}
-
-static int file_exists(const char *p)
-{
-    FILE *fp = fopen(p, "rb");
-    if (fp == NULL) return 0;
-    fclose(fp);
-    return 1;
-}
-
-static int copyfile(const char *src, const char *dst)
-{
-    FILE *in, *out;
-    char buf[2048];
-    size_t n;
-    in = fopen(src, "rb");
-    if (in == NULL) return -1;
-    out = fopen(dst, "wb");
-    if (out == NULL) { fclose(in); return -2; }
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
-        if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -3; }
-    fclose(in);
-    fclose(out);
-    return 0;
+    return (int)strlen(src) > size - 1;
 }
 
 /* Uppercase a char (ASCII). */
@@ -107,44 +97,63 @@ static int enum_index(const char **list, int n, const char *val)
 static int load_games(void)
 {
     static const char *cand[] = {
-        "C:\\CASTALIA\\CFG\\GAMES.INI",
+        GAMES_INI,
         "GAMES.INI",
         "config\\GAMES.INI"
     };
-    int i, n;
+    int i, n, rc;
     const char *sec, *v;
+    GAME *g;
 
     ini_path[0] = '\0';
-    for (i = 0; i < (int)(sizeof(cand) / sizeof(cand[0])); i++)
-        if (ini_open(cand[i]) == INI_OK) { strcpy(ini_path, cand[i]); break; }
+    for (i = 0; i < (int)(sizeof(cand) / sizeof(cand[0])); i++) {
+        rc = ini_open(cand[i]);
+        if (rc == INI_OK) { strcpy(ini_path, cand[i]); break; }
+        if (rc != INI_ERR_OPEN) {
+            /* The file is there but did not load (over 16 KB, or a read
+             * error).  An empty list saved over it would wipe every game,
+             * so keep its name and refuse to save. */
+            strcpy(ini_path, cand[i]);
+            read_only = 1;
+            return 0;
+        }
+    }
     if (ini_path[0] == '\0') {
         /* No file yet: start empty, will save to the default path. */
-        strcpy(ini_path, "C:\\CASTALIA\\CFG\\GAMES.INI");
+        strcpy(ini_path, GAMES_INI);
         return 1;
     }
 
+    /* Lines or sections past the INI module's tables are invisible here,
+     * so a save would drop them: count them with the other losses. */
+    lossy += ini_dropped();
+
     n = ini_section_count();
-    for (i = 0; i < n && ngames < MAX_GAMES; i++) {
+    for (i = 0; i < n; i++) {
         sec = ini_section_name(i);
         if (sec == NULL) continue;
         v = ini_get(sec, "exe");
-        if (v == NULL || v[0] == '\0') continue;
-        copystr(games[ngames].id, sec, sizeof(games[0].id));
-        copystr(games[ngames].exe, v, sizeof(games[0].exe));
-        copystr(games[ngames].name,
-                ini_get_def(sec, "name", sec), sizeof(games[0].name));
-        copystr(games[ngames].path,
-                ini_get_def(sec, "path", ""), sizeof(games[0].path));
-        copystr(games[ngames].args,
-                ini_get_def(sec, "args", ""), sizeof(games[0].args));
-        copystr(games[ngames].profile,
-                ini_get_def(sec, "profile", "XMS"), sizeof(games[0].profile));
-        copystr(games[ngames].sound,
-                ini_get_def(sec, "sound", "NONE"), sizeof(games[0].sound));
-        copystr(games[ngames].notes,
-                ini_get_def(sec, "notes", ""), sizeof(games[0].notes));
-        games[ngames].requires_cd = ini_get_bool(sec, "requires_cd", 0);
-        games[ngames].mouse       = ini_get_bool(sec, "mouse", 0);
+        if (v == NULL || v[0] == '\0' || ngames >= MAX_GAMES) {
+            lossy++;                /* not rewritten by a save */
+            continue;
+        }
+        g = &games[ngames];
+        lossy += copystr(g->id, sec, sizeof(g->id));
+        lossy += copystr(g->exe, v, sizeof(g->exe));
+        lossy += copystr(g->name, ini_get_def(sec, "name", sec),
+                         sizeof(g->name));
+        lossy += copystr(g->path, ini_get_def(sec, "path", ""),
+                         sizeof(g->path));
+        lossy += copystr(g->args, ini_get_def(sec, "args", ""),
+                         sizeof(g->args));
+        lossy += copystr(g->profile, ini_get_def(sec, "profile", "XMS"),
+                         sizeof(g->profile));
+        lossy += copystr(g->sound, ini_get_def(sec, "sound", "NONE"),
+                         sizeof(g->sound));
+        lossy += copystr(g->notes, ini_get_def(sec, "notes", ""),
+                         sizeof(g->notes));
+        g->requires_cd = ini_get_bool(sec, "requires_cd", 0);
+        g->mouse       = ini_get_bool(sec, "mouse", 0);
         ngames++;
     }
     return 1;
@@ -178,29 +187,32 @@ static void gen_id(GAME *g, int self)
     copystr(g->id, base, sizeof(g->id));
 }
 
+static void msg(const char *l1, const char *l2);
+static int  ask(const char *l1, const char *l2);
+
+/* Write GAMES.INI back to where it was loaded from.  Returns 0 on
+ * success; -1 write failed, -3 read-only, -5 cancelled by the user.
+ * On any failure the file on disk is as it was. */
 static int save_games(void)
 {
-    static const char *cand[] = {
-        "C:\\CASTALIA\\CFG\\GAMES.INI",
-        "GAMES.INI"
-    };
     FILE *fp;
+    char tmp[SIO_PATH];
     int i;
-    const char *path = ini_path[0] ? ini_path : cand[0];
+    const char *path = ini_path[0] ? ini_path : GAMES_INI;
 
-    /* Back up the existing file first. */
-    if (file_exists(path))
-        copyfile(path, "C:\\CASTALIA\\BACKUP\\GAMES.INI");
+    if (read_only)
+        return -3;
+    if (lossy && !ask("Saving drops the entries that did not fit.",
+                      "Enter/Y = save anyway   N = cancel"))
+        return -5;
+    if (sio_tmpname(path, tmp) != SIO_OK)
+        return -1;
 
-    fp = fopen(path, "w");
-    if (fp == NULL) {
-        /* Fall back to a writable location. */
-        for (i = 0; i < (int)(sizeof(cand) / sizeof(cand[0])); i++) {
-            fp = fopen(cand[i], "w");
-            if (fp != NULL) { strcpy(ini_path, cand[i]); break; }
-        }
-        if (fp == NULL) return -1;
-    }
+    /* Binary mode: the lines carry their own CR LF, and text mode
+     * would turn each "\r\n" into CR CR LF. */
+    fp = fopen(tmp, "wb");
+    if (fp == NULL)
+        return -1;
 
     fprintf(fp, "; CASTALIA DOS game database - edited by GAMECFG.EXE\r\n");
     fprintf(fp, "; One [SECTION] per game; read by LAUNCH.EXE.\r\n\r\n");
@@ -217,9 +229,47 @@ static int save_games(void)
         fprintf(fp, "requires_cd = %s\r\n", g->requires_cd ? "yes" : "no");
         fprintf(fp, "notes       = %s\r\n\r\n", g->notes);
     }
-    fclose(fp);
+    /* A failed fprintf leaves the stream's error flag set, and the
+     * last buffer only reaches the disk in fclose: one check covers
+     * every line. */
+    if (sio_close(fp) != 0) {
+        remove(tmp);
+        return -1;
+    }
+
+    /* Back up once per run, so the copy is the file as it was before
+     * this run's first save rather than an intermediate version. */
+    if (!backed_up && sio_exists(path)) {
+        if (sio_copy(path, GAMES_BAK) == SIO_OK)
+            backed_up = 1;
+        else if (!ask("GAMES.INI backup to C:\\CASTALIA\\BACKUP failed.",
+                      "Enter/Y = save anyway   N = cancel")) {
+            remove(tmp);
+            return -5;
+        }
+    }
+
+    if (sio_replace(tmp, path) != SIO_OK)
+        return -1;
+    strcpy(ini_path, path);
+    lossy = 0;                      /* what did not fit is gone now */
     dirty = 0;
     return 0;
+}
+
+/* Tell the user why a save did not happen. */
+static void save_failed(int rc)
+{
+    int crit = ui_crit_take();
+
+    if (rc == -5)
+        return;                     /* the user said no */
+    if (rc == -3)
+        msg("GAMES.INI was not loaded in full; not saved.",
+            "It is too big or unreadable. Edit it as text.");
+    else
+        msg("Save failed; GAMES.INI on disk is unchanged.",
+            crit >= 0 ? ui_crit_text(crit) : "Is the disk writable?");
 }
 
 /* Single-line editing comes from the shared UI library (ui_editline). */
@@ -437,6 +487,12 @@ int main(void)
 
     load_games();
     ui_init();
+    if (read_only)
+        msg("GAMES.INI could not be read (over 16 KB?).",
+            "Opened read-only: changes cannot be saved.");
+    else if (lossy)
+        msg("Some of GAMES.INI does not fit this editor.",
+            "Saving would drop it; you will be asked first.");
 
     for (;;) {
         if (sel < 0) sel = 0;
@@ -451,8 +507,12 @@ int main(void)
             if (!dirty) break;
             if (ask("Save changes to GAMES.INI before leaving?",
                     "Enter/Y = save   N = discard")) {
-                if (save_games() != 0)
-                    msg("Save failed - is the disk writable?", "");
+                int rc = save_games();
+                if (rc != 0) {
+                    /* Stay: leaving now would lose the changes. */
+                    save_failed(rc);
+                    continue;
+                }
             }
             break;
         } else if (key == KEY_UP) {
@@ -479,10 +539,12 @@ int main(void)
                 dirty = 1;
             }
         } else if (key == KEY_F2) {
-            if (save_games() == 0)
-                msg("Saved GAMES.INI.", "Previous version backed up.");
+            int rc = save_games();
+            if (rc == 0)
+                msg("Saved GAMES.INI.", backed_up ?
+                    "The original is in C:\\CASTALIA\\BACKUP." : "");
             else
-                msg("Save failed - is the disk writable?", "");
+                save_failed(rc);
         }
     }
 

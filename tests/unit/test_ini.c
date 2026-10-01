@@ -85,6 +85,9 @@ int main(void)
         "flag_one = 1\n"
         "flag_zero = 0\n"
         "flag_junk = maybe\n"
+        "big = 600000\n"
+        "junk_num = 12abc\n"
+        "commented = 14     ; amber\n"
         "empty =\n");
 
     CHECK(ini_open(TMP) == INI_OK, "well-formed file opens");
@@ -116,6 +119,17 @@ int main(void)
     CHECK(ini_get_int("beta", "num", -1) == 42, "int value parses");
     CHECK(ini_get_int("beta", "neg", 0) == -7, "negative int parses");
     CHECK(ini_get_int("beta", "nope", 99) == 99, "int default on miss");
+    CHECK(ini_get_int("beta", "junk_num", 99) == 99,
+          "int default on trailing junk");
+    CHECK(ini_get_int("beta", "flag_junk", 99) == 99,
+          "int default on non-number");
+    CHECK(ini_get_long("beta", "big", -1L) == 600000L,
+          "long holds a value past 16 bits");
+    CHECK(ini_get_long("beta", "junk_num", -1L) == -1L,
+          "long default on trailing junk");
+    CHECK(ini_get_int("beta", "commented", -1) == 14,
+          "int ignores a trailing ; comment");
+    CHECK(ini_dropped() == 0, "nothing dropped from a small file");
     CHECK(ini_get_bool("beta", "flag_yes", 0) == 1, "bool yes");
     CHECK(ini_get_bool("beta", "flag_no", 1) == 0, "bool No");
     CHECK(ini_get_bool("beta", "flag_on", 0) == 1, "bool ON");
@@ -135,6 +149,19 @@ int main(void)
     CHECK(ini_section_count() == 1, "reload replaced previous sections");
     CHECK(ini_get("alpha", "key1") == NULL,
           "old sections gone after reload");
+
+    /* --- more sections than the table holds: counted, not lost silently */
+    {
+        FILE *fp = fopen(TMP, "wb");
+        int i;
+        for (i = 0; i < INI_MAX_SECTIONS + 3; i++)
+            fprintf(fp, "[s%d]\nk=1\n", i);
+        fclose(fp);
+        CHECK(ini_open(TMP) == INI_OK, "many-section file still opens");
+        CHECK(ini_section_count() == INI_MAX_SECTIONS,
+              "section table filled to its limit");
+        CHECK(ini_dropped() == 3, "the 3 extra sections are reported");
+    }
 
     /* --- oversized file rejected ----------------------------------------- */
     {

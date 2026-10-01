@@ -292,7 +292,11 @@ static void step_keep(unsigned sf)
               UI_ATTR(C_WHITE, C_BLUE));
 }
 
-/* --- slide 2: the kernel identity, typed out line by line ------------- */
+/* --- slide 2: the kernel identity, typed out line by line -------------
+ * The slide shows where each answer lives (docs/KERNEL.md), not values:
+ * the tour never makes the call, and made-up numbers on a slide about a
+ * kernel that "never pretends" would be the one thing it must not do.
+ * CASTID is the tool that reads them live. */
 #define KLINES   13
 #define KX       10
 #define KY       6
@@ -301,10 +305,10 @@ static void step_keep(unsigned sf)
 static const char *kern_line[KLINES] = {
     "CASTALIA kernel identity  -  INT 2Fh  AH=CAh",
     "",
-    "  Build number    42",
-    "  Edition         Standard",
-    "  OEM identity    CAh   (Castalia)",
-    "  Boot profile    XMS   (read live from the kernel)",
+    "  Build number    CA00h  CX",
+    "  Edition         CA00h  DH   (01h = 386SX Edition)",
+    "  OEM identity    CA00h  DL   (CAh = Castalia)",
+    "  Boot profile    CA01h  CL   (the one that booted)",
     "  Behaviour       MS-DOS 6.22 compatible",
     "",
     "  Castalia is built on the FreeDOS kernel (GPLv2+)",
@@ -457,7 +461,7 @@ static const char *tool_desc[NTOOL] = {
     "CPU, memory, disk and video benchmark",
     "two-pane file manager",
     "verified file copy with a progress bar",
-    "the built-in documentation reader",
+    "the Disk Doctor: read-only surface scan",
     "conventional memory map and profiles",
     "sound card setup and the BLASTER string",
     "CONFIG.SYS and AUTOEXEC.BAT editor",

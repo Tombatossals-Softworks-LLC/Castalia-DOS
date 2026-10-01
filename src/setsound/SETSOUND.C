@@ -27,6 +27,11 @@
 #include <conio.h>
 #include "../common/UI.H"
 #include "../common/SPK.H"
+#include "../common/SAFEIO.H"
+
+/* AUTOEXEC.BAT calls exactly this file; a SOUND.BAT anywhere else would
+ * be written and then never run. */
+#define SOUND_BAT "C:\\CASTALIA\\CFG\\SOUND.BAT"
 
 /* A sound profile. */
 typedef struct {
@@ -59,7 +64,6 @@ static int hdma_opt[] = { 5, 6, 7 };
 #define NHDMA 3
 
 static int i_port = 0, i_irq = 0, i_dma = 0, i_hdma = 0;
-static char sound_path[80];
 
 /* Build the SET BLASTER value for the selected profile. */
 static void build_blaster(int sel, char *out)
@@ -83,36 +87,22 @@ static void build_blaster(int sel, char *out)
     }
 }
 
-/* Choose where to write SOUND.BAT (installed path, then local fallback). */
-static const char *pick_path(void)
-{
-    static const char *cand[] = {
-        "C:\\CASTALIA\\CFG\\SOUND.BAT",
-        "SOUND.BAT"
-    };
-    int i;
-    FILE *fp;
-    for (i = 0; i < (int)(sizeof(cand) / sizeof(cand[0])); i++) {
-        fp = fopen(cand[i], "w");
-        if (fp != NULL) {
-            fclose(fp);
-            strcpy(sound_path, cand[i]);
-            return sound_path;
-        }
-    }
-    return NULL;
-}
-
-/* Write SOUND.BAT for the selected profile.  Returns 1 on success. */
+/* Write SOUND.BAT for the selected profile.  Returns 1 on success.
+ *
+ * The new file is written under a temporary name and swapped in only
+ * when complete: a write that fails half-way leaves the previous
+ * SOUND.BAT working instead of an empty one. */
 static int write_sound(int sel)
 {
     SND *s = &snd[sel];
-    char bl[64];
+    char bl[64], tmp[SIO_PATH];
     FILE *fp;
 
-    if (pick_path() == NULL)
+    if (sio_tmpname(SOUND_BAT, tmp) != SIO_OK)
         return 0;
-    fp = fopen(sound_path, "w");
+    /* Binary mode: the lines carry their own CR LF, and text mode
+     * would turn each "\r\n" into CR CR LF. */
+    fp = fopen(tmp, "wb");
     if (fp == NULL)
         return 0;
 
@@ -128,8 +118,11 @@ static int write_sound(int sel)
         fprintf(fp, "REM %s profile: no SET BLASTER needed.\r\n", s->id);
         fprintf(fp, "SET SOUND=C:\\CASTALIA\r\n");
     }
-    fclose(fp);
-    return 1;
+    if (sio_close(fp) != 0) {
+        remove(tmp);
+        return 0;
+    }
+    return sio_replace(tmp, SOUND_BAT) == SIO_OK;
 }
 
 /* --- UI ------------------------------------------------------------- */
@@ -243,14 +236,16 @@ int main(void)
         else if (key == 't' || key == 'T')
             test_sound();
         else if (key == KEY_ENTER) {
+            ui_crit_take();         /* report only this write's error */
             if (write_sound(sel)) {
                 char m[80];
-                sprintf(m, "Saved %s (profile %s).", sound_path, snd[sel].id);
+                sprintf(m, "Saved %s (profile %s).", SOUND_BAT, snd[sel].id);
                 msgbox(m, "Reboot or re-run AUTOEXEC for it to take effect.");
             } else {
-                msgbox("Could not write SOUND.BAT.",
-                       "Check that C:\\CASTALIA\\CFG exists and the disk "
-                       "is writable.");
+                int crit = ui_crit_take();
+                msgbox("Could not write SOUND.BAT; nothing changed.",
+                       crit >= 0 ? ui_crit_text(crit) :
+                       "Check that C:\\CASTALIA\\CFG exists.");
             }
         }
     }

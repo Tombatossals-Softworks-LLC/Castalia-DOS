@@ -13,8 +13,9 @@
  * On a stock/FreeDOS kernel the identity call is ignored and the card
  * says so honestly - it never pretends.
  *
- * Build (Open Watcom):
+ * Build (Open Watcom; the Makefile rule is authoritative):
  *   wcl -0 -bt=dos -ml -os castid.c ..\common\ui.c ..\common\cpudet.c
+ *       ..\common\xmsinfo.c
  *
  * C89 only.  No dynamic allocation.
  * =================================================================== */

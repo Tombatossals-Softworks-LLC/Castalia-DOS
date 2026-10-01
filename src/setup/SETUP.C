@@ -15,15 +15,25 @@
  * This installer NEVER partitions or formats a disk on its own - that is
  * far too dangerous for an automated tool.  It assumes the target is an
  * already-formatted FAT16 disk (a fresh FORMAT, or an existing DOS).  It:
- *   1. backs up any existing CONFIG.SYS / AUTOEXEC.BAT first,
- *   2. creates the Castalia directory tree,
+ *   1. creates the Castalia directory tree (and C:\TEMP, which
+ *      AUTOEXEC.BAT points TEMP at),
+ *   2. backs up any existing CONFIG.SYS / AUTOEXEC.BAT,
  *   3. copies the DOS core and Castalia layer from the media (XCOPY),
+ *      keeping the user's own CASTALIA.INI / PROFILES.INI / GAMES.INI,
  *   4. writes the boot files and a sound profile,
  *   5. (optionally, with confirmation) makes the disk bootable via SYS.
  * The one destructive family of operations (SYS / overwriting root config)
  * happens only after an explicit confirmation screen, and after the old
- * config is safely backed up.  Partition/format is left to the user with
- * FDISK / FORMAT (see docs/INSTALL.md).
+ * config is safely backed up.  Every step is checked, and Setup stops at
+ * the first one that fails rather than overwriting the root config on
+ * top of a failed backup or a half-copied system.  Partition/format is
+ * left to the user with FDISK / FORMAT (see docs/INSTALL.md).
+ *
+ * The system as it was before Castalia is kept twice in \CASTALIA\BACKUP:
+ * as CONFIG.ORG / AUTOEXEC.ORG, which nothing ever rewrites, and as
+ * CONFIG.SYS / AUTOEXEC.BAT, the working slot SAFEBOOT restores from and
+ * the menu's Backup and CFGEDIT later reuse.  Running Setup again keeps
+ * the config it is about to replace as CONFIG.OLD / AUTOEXEC.OLD.
  *
  * Bulk copy and boot-sector work are delegated to the standard FreeDOS
  * tools (XCOPY, SYS) via system(); the safety logic lives here.
@@ -40,6 +50,8 @@
 #include <dos.h>
 #include "../common/UI.H"
 #include "../common/LOGO.H"
+#include "../common/DIRW.H"
+#include "../common/SAFEIO.H"
 
 #define KEEP_X ((SCR_W - LOGO_KEEP_W) / 2)
 
@@ -71,22 +83,28 @@ static int  o_sys   = 1;      /* make bootable */
 
 /* Install progress bookkeeping (text-mode phase). */
 static int g_step, g_total;
+static int g_backed_up;     /* root config saved; it may be replaced now */
 
 /* --- helpers -------------------------------------------------------- */
 
 static const char *src_root(void) { return src_opt[i_src]; }
 
-/* Write the sound include SOUND.BAT on the target for the chosen profile. */
-static void write_sound(void)
+/* Write the sound include SOUND.BAT on the target for the chosen profile.
+ * 0 on success; a failure leaves any previous SOUND.BAT as it was. */
+static int write_sound(void)
 {
-    char path[64], bl[48];
+    char path[64], tmp[SIO_PATH], bl[48];
     FILE *fp;
     int s = o_sound;
 
     sprintf(path, "%c:\\CASTALIA\\CFG\\SOUND.BAT", tgt);
-    fp = fopen(path, "w");
+    if (sio_tmpname(path, tmp) != SIO_OK)
+        return -1;
+    /* Binary mode: the lines carry their own CR LF, and text mode
+     * would turn each "\r\n" into CR CR LF. */
+    fp = fopen(tmp, "wb");
     if (fp == NULL)
-        return;
+        return -1;
     fprintf(fp, "@ECHO OFF\r\n");
     fprintf(fp, "REM Written by CASTALIA SETUP - profile %s\r\n", snd_id[s]);
     if (snd_type[s] != 0) {
@@ -100,7 +118,11 @@ static void write_sound(void)
         fprintf(fp, "REM %s: no SET BLASTER needed.\r\n", snd_id[s]);
         fprintf(fp, "SET SOUND=C:\\CASTALIA\r\n");
     }
-    fclose(fp);
+    if (sio_close(fp) != 0) {
+        remove(tmp);
+        return -1;
+    }
+    return sio_replace(tmp, path) == SIO_OK ? 0 : -1;
 }
 
 /* --- wizard chrome -------------------------------------------------- */
@@ -248,11 +270,108 @@ static void step_end(void)
     printf("done\n");
 }
 
-static void run_step(const char *desc, const char *cmd)
+static void step_fail(void)
+{
+    g_step++;
+    printf("FAILED\n");
+}
+
+/* Run one shell command as a step.  0 if it reported success.  system()
+ * returns -1 when no shell could be started, and FreeCOM hands back the
+ * command's exit code, so an XCOPY or SYS error is non-zero here. */
+static int run_step(const char *desc, const char *cmd)
 {
     step_begin(desc);
-    system(cmd);
+    if (system(cmd) != 0) {
+        step_fail();
+        return -1;
+    }
     step_end();
+    return 0;
+}
+
+/* 1 if 'path' is an existing directory. */
+static int dir_exists(const char *path)
+{
+    return dirw_first(path) == 0 && dirw_isdir();
+}
+
+/* Create 'path' unless it is there.  0 if it exists afterwards: a
+ * folder that silently failed to appear only showed up later as a
+ * confusing copy error. */
+static int make_dir(const char *path)
+{
+    if (dir_exists(path))
+        return 0;
+    dirw_mkdir(path);
+    return dir_exists(path) ? 0 : -1;
+}
+
+/* The user's own settings in \CASTALIA\CFG.  XCOPY /Y would replace them
+ * with the media's defaults on a re-install, so they are renamed to
+ * *.USR around the copy and put back afterwards. */
+static const char *user_cfg[] = { "CASTALIA", "PROFILES", "GAMES" };
+#define NUSERCFG 3
+static int cfg_kept[NUSERCFG];
+
+static int keep_user_cfg(void)
+{
+    char ini[64], usr[64];
+    int i;
+
+    for (i = 0; i < NUSERCFG; i++) {
+        cfg_kept[i] = 0;
+        sprintf(ini, "%c:\\CASTALIA\\CFG\\%s.INI", tgt, user_cfg[i]);
+        sprintf(usr, "%c:\\CASTALIA\\CFG\\%s.USR", tgt, user_cfg[i]);
+        if (sio_exists(usr))
+            cfg_kept[i] = 1;    /* set aside by an interrupted install */
+        else if (sio_exists(ini)) {
+            if (rename(ini, usr) != 0)
+                return -1;
+            cfg_kept[i] = 1;
+        }
+    }
+    return 0;
+}
+
+static int restore_user_cfg(void)
+{
+    char ini[64], usr[64];
+    int i, bad = 0;
+
+    for (i = 0; i < NUSERCFG; i++) {
+        if (!cfg_kept[i])
+            continue;
+        sprintf(ini, "%c:\\CASTALIA\\CFG\\%s.INI", tgt, user_cfg[i]);
+        sprintf(usr, "%c:\\CASTALIA\\CFG\\%s.USR", tgt, user_cfg[i]);
+        remove(ini);            /* the media's default, if XCOPY got here */
+        if (rename(usr, ini) != 0)
+            bad = 1;
+        else
+            cfg_kept[i] = 0;
+    }
+    if (bad)
+        printf("  Your own settings are kept in %c:\\CASTALIA\\CFG\\*.USR;\n"
+               "  rename them back to .INI.\n", tgt);
+    return bad ? -1 : 0;
+}
+
+/* Stop the install: say what failed, and wait so it can be read before
+ * the wizard comes back. */
+static int install_failed(const char *what, const char *why)
+{
+    printf("\n  %s: %s.\n", what, why);
+    printf("  Setup stopped here; the steps after this one were not done.\n");
+    if (g_backed_up)
+        printf("  Your previous CONFIG.SYS and AUTOEXEC.BAT are saved in\n"
+               "  %c:\\CASTALIA\\BACKUP.\n", tgt);
+    else
+        printf("  Your CONFIG.SYS and AUTOEXEC.BAT were not touched.\n");
+    printf("\n  Press ENTER to return to Setup...");
+    fflush(stdout);
+    getchar();
+    ui_init();
+    return -1;
 }
 
 /* Is the target drive actually there, and can we write to it?
@@ -329,13 +448,23 @@ static void no_target_panel(const char *why)
     (void)ui_getkey();
 }
 
-static void do_install(void)
+/* Returns 0 when Castalia is installed (possibly with warnings), -1 if
+ * Setup had to stop. */
+static int do_install(void)
 {
-    char cmd[160];
+    static const char *sub[] =
+        { "BIN","DRV","CFG","HELP","GAMES","TOOLS","BACKUP" };
+    static const char *top[] = { "DOS", "GAMES", "TEMP" };
+    static const char *boot[] = { "CONFIG.SYS", "AUTOEXEC.BAT" };
+    static const char *old[]  = { "CONFIG.OLD", "AUTOEXEC.OLD" };
+    static const char *org[]  = { "CONFIG.ORG", "AUTOEXEC.ORG" };
+    char cmd[160], path[64], bak[64], src[80], desc[48];
     const char *s = src_root();
+    int i, rc = 0, warn = 0;
 
     g_step  = 0;
     g_total = o_sys ? 14 : 13;
+    g_backed_up = 0;
 
     ui_done();
     printf("\n");
@@ -344,80 +473,152 @@ static void do_install(void)
            tgt);
     printf("  +============================================================+\n\n");
 
-    /* 1. Create the tree (parents first). */
-    sprintf(cmd, "IF NOT EXIST %c:\\CASTALIA\\NUL MKDIR %c:\\CASTALIA", tgt, tgt);
-    run_step("Creating C:\\CASTALIA", cmd);
-    {
-        static const char *sub[] =
-            { "BIN","DRV","CFG","HELP","GAMES","TOOLS","BACKUP" };
-        int i;
-        step_begin("Creating the Castalia subfolders");
-        for (i = 0; i < 7; i++) {
-            sprintf(cmd, "IF NOT EXIST %c:\\CASTALIA\\%s\\NUL "
-                    "MKDIR %c:\\CASTALIA\\%s", tgt, sub[i], tgt, sub[i]);
-            system(cmd);
+    /* 1. Create the tree (parents first).  Checked in C: MKDIR run
+     * through the shell reports nothing back. */
+    step_begin("Creating \\CASTALIA and its subfolders");
+    sprintf(path, "%c:\\CASTALIA", tgt);
+    rc = make_dir(path);
+    for (i = 0; i < 7 && rc == 0; i++) {
+        sprintf(path, "%c:\\CASTALIA\\%s", tgt, sub[i]);
+        rc = make_dir(path);
+    }
+    if (rc != 0) {
+        step_fail();
+        return install_failed(path, "could not create this folder");
+    }
+    step_end();
+
+    step_begin("Creating \\DOS, \\GAMES and \\TEMP");
+    for (i = 0; i < 3 && rc == 0; i++) {
+        sprintf(path, "%c:\\%s", tgt, top[i]);
+        rc = make_dir(path);
+    }
+    if (rc != 0) {
+        step_fail();
+        return install_failed(path, "could not create this folder");
+    }
+    step_end();
+
+    /* 2. Back up any existing config BEFORE overwriting the root.  The
+     * first backup is the pre-Castalia system and is never replaced;
+     * a re-install keeps the config it replaces as *.OLD instead.  No
+     * backup, no install: the root files are only touched after this. */
+    for (i = 0; i < 2; i++) {
+        sprintf(desc, "Backing up existing %s", boot[i]);
+        step_begin(desc);
+        sprintf(path, "%c:\\%s", tgt, boot[i]);
+        /* *.ORG is written once and never by anything else: the menu's
+         * Backup, CFGEDIT and SAFEBOOT all reuse the BACKUP\CONFIG.SYS
+         * slot, so that one cannot be relied on to stay pre-Castalia. */
+        sprintf(bak, "%c:\\CASTALIA\\BACKUP\\%s", tgt, org[i]);
+        if (sio_exists(path) && !sio_exists(bak) &&
+            sio_copy(path, bak) != SIO_OK) {
+            step_fail();
+            return install_failed(bak, "could not write the backup");
+        }
+        sprintf(bak, "%c:\\CASTALIA\\BACKUP\\%s", tgt, boot[i]);
+        if (sio_exists(bak))
+            sprintf(bak, "%c:\\CASTALIA\\BACKUP\\%s", tgt, old[i]);
+        if (sio_exists(path) && sio_copy(path, bak) != SIO_OK) {
+            step_fail();
+            return install_failed(bak, "could not write the backup");
         }
         step_end();
     }
-    sprintf(cmd, "IF NOT EXIST %c:\\DOS\\NUL MKDIR %c:\\DOS", tgt, tgt);
-    run_step("Creating C:\\DOS", cmd);
-    sprintf(cmd, "IF NOT EXIST %c:\\GAMES\\NUL MKDIR %c:\\GAMES", tgt, tgt);
-    run_step("Creating C:\\GAMES", cmd);
+    g_backed_up = 1;
 
-    /* 2. Back up any existing config BEFORE overwriting the root. */
-    sprintf(cmd, "IF EXIST %c:\\CONFIG.SYS COPY /Y %c:\\CONFIG.SYS "
-            "%c:\\CASTALIA\\BACKUP\\CONFIG.SYS >NUL", tgt, tgt, tgt);
-    run_step("Backing up existing CONFIG.SYS", cmd);
-    sprintf(cmd, "IF EXIST %c:\\AUTOEXEC.BAT COPY /Y %c:\\AUTOEXEC.BAT "
-            "%c:\\CASTALIA\\BACKUP\\AUTOEXEC.BAT >NUL", tgt, tgt, tgt);
-    run_step("Backing up existing AUTOEXEC.BAT", cmd);
-
-    /* 3. Copy the DOS core and Castalia layer from the media. */
+    /* 3. Copy the DOS core and Castalia layer from the media, with the
+     * user's own settings moved out of XCOPY's way. */
+    step_begin("Setting your Castalia settings aside");
+    if (keep_user_cfg() != 0) {
+        step_fail();
+        restore_user_cfg();
+        sprintf(path, "%c:\\CASTALIA\\CFG", tgt);
+        return install_failed(path, "could not rename the settings files");
+    }
+    step_end();
     sprintf(cmd, "XCOPY %sDOS %c:\\DOS /S /E /Y >NUL", s, tgt);
-    run_step("Copying the DOS core", cmd);
+    if (run_step("Copying the DOS core", cmd) != 0) {
+        restore_user_cfg();
+        return install_failed("XCOPY", "copying the DOS core failed");
+    }
     sprintf(cmd, "XCOPY %sCASTALIA %c:\\CASTALIA /S /E /Y >NUL", s, tgt);
-    run_step("Copying the Castalia tools", cmd);
+    if (run_step("Copying the Castalia tools", cmd) != 0) {
+        restore_user_cfg();
+        return install_failed("XCOPY", "copying the Castalia tools failed");
+    }
+    step_begin("Restoring your Castalia settings");
+    if (restore_user_cfg() != 0) {
+        step_fail();
+        warn = 1;
+    } else {
+        step_end();
+    }
 
     /* 4. Boot files + root config. */
     sprintf(cmd, "IF EXIST %sKERNEL.SYS COPY /Y %sKERNEL.SYS %c:\\ >NUL",
             s, s, tgt);
-    run_step("Copying KERNEL.SYS", cmd);
+    if (run_step("Copying KERNEL.SYS", cmd) != 0)
+        return install_failed("KERNEL.SYS", "could not be copied");
     sprintf(cmd, "IF EXIST %sCOMMAND.COM COPY /Y %sCOMMAND.COM %c:\\ >NUL",
             s, s, tgt);
-    run_step("Copying COMMAND.COM", cmd);
-    /* Prefer the installed-system templates in INSTALL\ (the floppy's
-     * own root CONFIG.SYS boots from A: and must not land on C:). */
-    sprintf(cmd, "IF EXIST %sINSTALL\\CONFIG.SYS "
-            "COPY /Y %sINSTALL\\CONFIG.SYS %c:\\ >NUL", s, s, tgt);
-    system(cmd);
-    sprintf(cmd, "IF NOT EXIST %sINSTALL\\CONFIG.SYS "
-            "COPY /Y %sCONFIG.SYS %c:\\ >NUL", s, s, tgt);
-    run_step("Writing CONFIG.SYS", cmd);
-    sprintf(cmd, "IF EXIST %sINSTALL\\AUTOEXEC.BAT "
-            "COPY /Y %sINSTALL\\AUTOEXEC.BAT %c:\\ >NUL", s, s, tgt);
-    system(cmd);
-    sprintf(cmd, "IF NOT EXIST %sINSTALL\\AUTOEXEC.BAT "
-            "COPY /Y %sAUTOEXEC.BAT %c:\\ >NUL", s, s, tgt);
-    run_step("Writing AUTOEXEC.BAT", cmd);
+    if (run_step("Copying COMMAND.COM", cmd) != 0)
+        return install_failed("COMMAND.COM", "could not be copied");
+    for (i = 0; i < 2; i++) {
+        sprintf(desc, "Writing %s", boot[i]);
+        step_begin(desc);
+        /* Prefer the installed-system templates in INSTALL\ (the floppy's
+         * own root CONFIG.SYS boots from A: and must not land on C:). */
+        sprintf(src, "%sINSTALL\\%s", s, boot[i]);
+        if (!sio_exists(src))
+            sprintf(src, "%s%s", s, boot[i]);
+        sprintf(path, "%c:\\%s", tgt, boot[i]);
+        /* sio_copy swaps the new file in only when it is complete, so
+         * a failure leaves the old one bootable.  SAME: installing from
+         * the target's own root, the file is already in place. */
+        rc = sio_copy(src, path);
+        if (rc != SIO_OK && rc != SIO_ERR_SAME) {
+            step_fail();
+            return install_failed(rc == SIO_ERR_SRC ? src : path,
+                                  rc == SIO_ERR_SRC ?
+                                  "not found on the install media" :
+                                  "could not be written; the old one stays");
+        }
+        step_end();
+    }
 
-    /* 5. Sound profile. */
+    /* 5. Sound profile.  Not worth stopping for: SETSOUND can redo it. */
     step_begin("Writing the sound profile");
-    write_sound();
-    step_end();
+    if (write_sound() != 0) {
+        step_fail();
+        printf("  Run SETSOUND after rebooting to choose the sound card.\n");
+        warn = 1;
+    } else {
+        step_end();
+    }
 
     /* 6. Optional: make the disk bootable. */
     if (o_sys) {
         sprintf(cmd, "SYS %c: >NUL", tgt);
-        run_step("Making the disk bootable (SYS)", cmd);
+        if (run_step("Making the disk bootable (SYS)", cmd) != 0) {
+            printf("  Run SYS %c: before removing the install media.\n", tgt);
+            warn = 1;
+        }
     }
 
     printf("\n");
     progress_bar();
-    printf("\n\n  Installation finished.  Press ENTER to raise the keep...");
+    if (warn)
+        printf("\n\n  Installed, but see the warnings above.  "
+               "Press ENTER to continue...");
+    else
+        printf("\n\n  Installation finished.  "
+               "Press ENTER to raise the keep...");
     fflush(stdout);
     getchar();
 
     ui_init();
+    return 0;
 }
 
 /* Full-screen "installed" splash: two block wordmarks and the next steps. */
@@ -522,8 +723,9 @@ int main(void)
                     step = STEP_WELCOME;
                     break;
                 }
-                do_install();
-                step = STEP_DONE;
+                /* After a failure the wizard starts over: nothing past
+                 * the failed step was written. */
+                step = (do_install() == 0) ? STEP_DONE : STEP_WELCOME;
             }
             break;
         }

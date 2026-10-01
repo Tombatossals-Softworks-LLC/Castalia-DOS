@@ -10,15 +10,20 @@
  * navigate lines, edit the current line in place (shared ui_editline),
  * insert/delete lines, and save.
  *
- * Safety: on save, the previous version of the file is first copied to
- * a .BAK next to it (NOTES.TXT -> NOTES.BAK), so every save is
- * reversible.  F4 saves under a new name.  New files work: opening a
- * name that does not exist starts an empty buffer.
+ * Safety: a save writes the whole buffer to a temporary file next to
+ * the target and only swaps it in once every byte is on the disk, so a
+ * full disk can never leave a truncated file.  On the first save of a
+ * session the version that was opened is copied to a .BAK next to it
+ * (NOTES.TXT -> NOTES.BAK); later saves keep that .BAK, so it always
+ * holds the file as it was before this session.  F4 saves under a new
+ * name.  New files work: opening a name that does not exist starts an
+ * empty buffer.
  *
  * Line-oriented on purpose (like CFGEDIT): tiny, predictable, and
  * plenty for CONFIG files, notes, INI files, and batch files.  Caps:
- * 400 lines x 160 characters, loaded fully into fixed buffers; longer
- * files load up to the cap with a visible warning.
+ * 400 lines x 159 characters, loaded fully into fixed buffers.  A file
+ * beyond either cap is shown up to the cap and opened read-only:
+ * saving it would silently cut off what did not fit.
  *
  * Build (Open Watcom):
  *   wcl -0 -bt=dos -ml -os castedit.c ..\common\ui.c
@@ -30,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../common/UI.H"
+#include "../common/SAFEIO.H"
 
 #define MAXL 400
 #define MAXC 160
@@ -37,35 +43,13 @@
 static char lines[MAXL][MAXC];
 static int  nlines = 0;
 static int  modified = 0;
-static int  truncated = 0;
+static int  truncated = 0;      /* file did not fit: read-only */
 static char fname[80];
 static int  have_name = 0;
+static char bak_of[80];         /* file whose .BAK this session made */
+static int  bak_made = 0;       /* ... and whether there was one     */
 
 /* --- file helpers ------------------------------------------------------ */
-
-static int copyfile(const char *src, const char *dst)
-{
-    FILE *in, *out;
-    char buf[2048];
-    size_t n;
-    in = fopen(src, "rb");
-    if (in == NULL) return -1;
-    out = fopen(dst, "wb");
-    if (out == NULL) { fclose(in); return -2; }
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
-        if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -3; }
-    fclose(in);
-    fclose(out);
-    return 0;
-}
-
-static int file_exists(const char *p)
-{
-    FILE *fp = fopen(p, "rb");
-    if (fp == NULL) return 0;
-    fclose(fp);
-    return 1;
-}
 
 /* NOTES.TXT -> NOTES.BAK (extension replaced; appended when none). */
 static void bak_name(const char *name, char *out)
@@ -99,7 +83,8 @@ static void strip_eol(char *s)
 static void load_file(void)
 {
     FILE *fp;
-    char tmp[MAXC];
+    char tmp[MAXC + 2];             /* a full line plus its '\n' */
+    int n;
 
     nlines = 0;
     modified = 0;
@@ -112,7 +97,18 @@ static void load_file(void)
     }
     while (fgets(tmp, (int)sizeof(tmp), fp) != NULL) {
         if (nlines >= MAXL) { truncated = 1; break; }
+        n = (int)strlen(tmp);
+        if (n > 0 && tmp[n - 1] != '\n' && !feof(fp)) {
+            /* fgets stopped mid-line.  Skip the rest of it rather than
+             * let it come back as a line of its own. */
+            int c;
+            while ((c = fgetc(fp)) != EOF && c != '\n')
+                ;
+            truncated = 1;
+        }
         strip_eol(tmp);
+        if ((int)strlen(tmp) > MAXC - 1)
+            truncated = 1;
         strncpy(lines[nlines], tmp, MAXC - 1);
         lines[nlines][MAXC - 1] = '\0';
         nlines++;
@@ -121,25 +117,55 @@ static void load_file(void)
     if (nlines == 0) { lines[0][0] = '\0'; nlines = 1; }
 }
 
-/* Save to fname; back up the old version first.  0 on success. */
+/* Save to fname.  0 on success; -1 write failed, -2 no name,
+ * -3 read-only, -4 the .BAK could not be made.  On any failure the file
+ * on disk is as it was. */
 static int save_file(void)
 {
     FILE *fp;
-    char bak[84];
-    int i;
+    char tmp[SIO_PATH], bak[84];
+    int i, bad = 0;
 
     if (!have_name)
         return -2;
-    if (file_exists(fname)) {
-        bak_name(fname, bak);
-        copyfile(fname, bak);       /* best-effort backup */
-    }
-    fp = fopen(fname, "w");
+    if (truncated)
+        return -3;
+    if (sio_tmpname(fname, tmp) != SIO_OK)
+        return -1;
+
+    /* Binary mode: the lines carry their own CR LF, and text mode
+     * would turn each "\r\n" into CR CR LF. */
+    fp = fopen(tmp, "wb");
     if (fp == NULL)
         return -1;
-    for (i = 0; i < nlines; i++)
-        fprintf(fp, "%s\r\n", lines[i]);
-    fclose(fp);
+    for (i = 0; i < nlines && !bad; i++)
+        if (fputs(lines[i], fp) < 0 || fputs("\r\n", fp) < 0)
+            bad = 1;
+    if (sio_close(fp) != 0 || bad) {
+        remove(tmp);
+        return -1;
+    }
+
+    /* Back up only on the first save of this file in this session:
+     * a second save must not replace the .BAK of the original with
+     * the first save's version. */
+    if (bak_of[0] == '\0' || !sio_same(bak_of, fname)) {
+        bak_made = 0;
+        if (sio_exists(fname)) {
+            bak_name(fname, bak);
+            if (!sio_same(fname, bak)) {    /* editing NOTES.BAK itself */
+                if (sio_copy(fname, bak) != SIO_OK) {
+                    remove(tmp);
+                    return -4;
+                }
+                bak_made = 1;
+            }
+        }
+        strcpy(bak_of, fname);
+    }
+
+    if (sio_replace(tmp, fname) != SIO_OK)
+        return -1;
     modified = 0;
     return 0;
 }
@@ -153,6 +179,23 @@ static void notify(const char *msg)
     ui_box(x, y, w, h, A_PANEL);
     ui_putlim(x + 3, y + 2, msg, w - 6, A_PANEL);
     ui_getkey();
+}
+
+/* Tell the user why a save did not happen. */
+static void save_failed(int rc)
+{
+    char msg[60];
+    int crit = ui_crit_take();
+
+    if (rc == -3)
+        strcpy(msg, "Read-only file (too big to load); not saved.");
+    else if (crit >= 0)
+        sprintf(msg, "Save failed: %s.", ui_crit_text(crit));
+    else if (rc == -4)
+        strcpy(msg, "Backup (.BAK) failed; the file is unchanged.");
+    else
+        strcpy(msg, "Save failed; the file on disk is unchanged.");
+    notify(msg);
 }
 
 /* Prompt for a filename into buf.  1 = accepted non-empty. */
@@ -207,8 +250,8 @@ static void draw_editor(int cur, int top)
     }
 
     if (truncated)
-        ui_puts(4, 22, "(file was longer than the editor limit; extra lines "
-                "not loaded)", A_WARN);
+        ui_puts(4, 22, "Read-only: beyond 400 lines or 159 characters a line; "
+                "not all shown", A_WARN);
 
     ui_fill(0, SCR_H - 1, SCR_W, 1, ' ', A_STATUS);
     ui_puts(1, SCR_H - 1,
@@ -219,7 +262,7 @@ static void draw_editor(int cur, int top)
 /* Ask about unsaved changes on quit.  1 = leave, 0 = stay. */
 static int confirm_quit(void)
 {
-    int w = 52, h = 8, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2, k;
+    int w = 52, h = 8, x = (SCR_W - w) / 2, y = (SCR_H - h) / 2, k, i;
     if (!modified)
         return 1;
     ui_fill(x, y, w, h, ' ', A_PANEL);
@@ -235,8 +278,9 @@ static int confirm_quit(void)
             if (!have_name && !ask_name(" Save as ", fname, sizeof(fname)))
                 return 0;
             have_name = 1;
-            if (save_file() != 0) {
-                notify("Save failed - is the disk writable?");
+            i = save_file();
+            if (i != 0) {
+                save_failed(i);
                 return 0;
             }
             return 1;
@@ -248,6 +292,12 @@ static int confirm_quit(void)
 
 static void do_save(int saveas)
 {
+    int rc;
+
+    if (truncated) {                /* before asking for a name */
+        save_failed(-3);
+        return;
+    }
     if (saveas || !have_name) {
         char newname[80];
         strcpy(newname, have_name ? fname : "");
@@ -256,10 +306,23 @@ static void do_save(int saveas)
         strcpy(fname, newname);
         have_name = 1;
     }
-    if (save_file() == 0)
-        notify("Saved.  Previous version kept as .BAK.");
+    rc = save_file();
+    if (rc != 0)
+        save_failed(rc);
+    else if (bak_made)
+        notify("Saved.  The version you opened is kept as .BAK.");
     else
-        notify("Save failed - is the disk writable?");
+        notify("Saved.");
+}
+
+/* Editing keys on a read-only buffer: say why nothing happens.
+ * 1 if the key must be ignored. */
+static int read_only(void)
+{
+    if (!truncated)
+        return 0;
+    notify("Read-only: the file is too big for the editor.");
+    return 1;
 }
 
 /* --- main -------------------------------------------------------------------- */
@@ -307,6 +370,9 @@ int main(int argc, char *argv[])
             cur = 0;
         } else if (key == KEY_END) {
             cur = nlines - 1;
+        } else if ((key == KEY_ENTER || key == KEY_INS || key == KEY_DEL)
+                   && read_only()) {
+            /* nothing: the buffer does not hold the whole file */
         } else if (key == KEY_ENTER) {
             char work[MAXC];
             strcpy(work, lines[cur]);

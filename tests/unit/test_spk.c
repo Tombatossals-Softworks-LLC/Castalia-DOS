@@ -29,8 +29,11 @@ void ui_idle(void) { }
 #include "SPK.C"
 
 /* putenv() is POSIX, not C89, so -std=c89 hides its declaration; declare
- * it here and hand it writable buffers as the interface requires. */
+ * it here and hand it writable buffers as the interface requires.  The
+ * MinGW headers already declare it, with a const parameter. */
+#ifndef _WIN32
 extern int putenv(char *);
+#endif
 
 static void set_castsound(const char *value)
 {

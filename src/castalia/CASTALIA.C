@@ -422,15 +422,24 @@ static void tombatossals(void)
     int base = 10, top, i;
     unsigned long t;
 
-    /* He rises out of the plain, one row per couple of ticks. */
+    /* He rises out of the plain, one row per couple of ticks.  The waits
+     * count elapsed ticks as an unsigned difference, as wait_key() does:
+     * a deadline compared with "<" never arrives once the BIOS counter
+     * resets at midnight, and the screen would hang for a day.  A key
+     * sends him back early. */
     for (top = 23; top >= base; top--) {
         ui_fill(gx, top + rows, w, 1, ' ', A_DESKTOP);
         for (i = 0; i < rows; i++)
             if (top + i >= 1 && top + i <= SCR_H - 2)
                 ui_puts(gx, top + i, fig[i], UI_ATTR(C_BROWN, C_BLUE));
-        t = ui_ticks() + 2UL;
-        while (ui_ticks() < t)
+        t = ui_ticks();
+        while (ui_ticks() - t < 2UL) {
+            if (ui_keywaiting()) {
+                (void)ui_getkey();
+                return;
+            }
             ui_idle();
+        }
     }
 
     ui_center(base + rows + 1, "T O M B A T O S S A L S", A_TITLE);
@@ -446,15 +455,18 @@ static void tombatossals(void)
         }
         for (i = 0; i < 2; i++)
             twinkle();
-        t = ui_ticks() + 3UL;
-        while (ui_ticks() < t && !ui_keywaiting())
+        t = ui_ticks();
+        while (ui_ticks() - t < 3UL && !ui_keywaiting())
             ui_idle();
     }
 }
 
 static void draw_screen(void)
 {
-    char line[64];
+    /* Sized for the longest [about] fields CASTALIA.INI can set (39, 15
+     * and 23 characters) plus the separators; ui_center clips the rest
+     * at the screen edge. */
+    char line[96];
 
     ui_cls(A_DESKTOP);
     ui_fill(0, 0, SCR_W, 1, ' ', A_TITLE);
@@ -638,7 +650,7 @@ static void credits_roll(void)
  * honest FreeDOS/GPL attribution. */
 static void about_screen(void)
 {
-    char v[72];
+    char v[104];        /* the [about] line can reach 98 characters */
     int w = 68, h = 19;
     int x = (SCR_W - w) / 2, y = (SCR_H - h) / 2;
     unsigned char body   = A_PANEL;
@@ -652,7 +664,7 @@ static void about_screen(void)
 
     sprintf(v, "CASTALIA DOS %s  -  %s \"%s\"",
             ab_edition, ab_version, ab_codename);
-    ui_puts(x + 3, y + 2, v, accent);
+    ui_putlim(x + 3, y + 2, v, w - 5, accent);  /* stay inside the frame */
 
     /* Live readout of the machine it is actually running on. */
     ui_puts(x + 3, y + 3, "This machine", dim);

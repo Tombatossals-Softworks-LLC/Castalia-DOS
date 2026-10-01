@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #endif
 #include "../common/UI.H"
+#include "../common/SAFEIO.H"
 
 #define MAX_ENT  512
 #define NAMELEN  13
@@ -60,6 +61,14 @@ static char curdir[128];
 #define make_dir dirw_mkdir     /* shared portable wrapper */
 
 /* --- INT 21h helpers (portable) ------------------------------------- */
+
+static int cur_drive(void)
+{
+    union REGS r;
+    r.h.ah = 0x19;
+    int86(0x21, &r, &r);
+    return r.h.al + 'A';
+}
 
 static void set_drive(int letter)
 {
@@ -117,26 +126,48 @@ static void read_dir(void)
 
 /* --- small utilities ------------------------------------------------ */
 
-static int copyfile(const char *src, const char *dst)
-{
-    FILE *in, *out;
-    char buf[2048];
-    size_t n;
-    in = fopen(src, "rb");
-    if (in == NULL) return -1;
-    out = fopen(dst, "wb");
-    if (out == NULL) { fclose(in); return -2; }
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
-        if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -3; }
-    fclose(in);
-    fclose(out);
-    return 0;
-}
-
 static char up(char c)
 {
     if (c >= 'a' && c <= 'z') return (char)(c - 32);
     return c;
+}
+
+/* Turn the typed copy/move target into a file name.  The prompt says
+ * "path or name", so a target that is a directory ("A:\", "..",
+ * "C:\GAMES") means "into that directory, under the same name".
+ * 0, or -1 if the result would not fit or the target has wildcards. */
+static int resolve_dest(const char *typed, const char *name, char *out)
+{
+    int n = (int)strlen(typed);
+    int dir;
+
+    if (strchr(typed, '*') != NULL || strchr(typed, '?') != NULL)
+        return -1;
+    if (n + 1 + (int)strlen(name) + 1 > SIO_PATH)
+        return -1;
+    strcpy(out, typed);
+    if (n > 0 && (typed[n - 1] == '\\' || typed[n - 1] == ':'))
+        dir = 1;
+    else
+        dir = (f_first(typed) == 0 && f_isdir());
+    if (dir) {
+        if (typed[n - 1] != '\\' && typed[n - 1] != ':')
+            strcat(out, "\\");
+        strcat(out, name);
+    }
+    return 0;
+}
+
+/* Why the last copy failed, for the second line of a notice. */
+static const char *copy_why(int rc)
+{
+    int crit = ui_crit_take();
+    if (crit >= 0)                  /* the drive itself said why */
+        return ui_crit_text(crit);
+    if (rc == SIO_ERR_SRC)  return "cannot read the source file";
+    if (rc == SIO_ERR_SAME) return "source and destination are one file";
+    if (rc == SIO_ERR_NAME) return "the path is too long";
+    return "cannot write there (disk full or write-protected?)";
 }
 
 static int is_exec(const char *name)
@@ -323,10 +354,79 @@ static void draw(int sel, int top)
         "F8 Del  F9 Drive  F10 Quit", A_STATUS);
 }
 
+/* --- copy / move ---------------------------------------------------- */
+
+/* F5: copy the file 'name' (in the current directory) to 'typed'. */
+static void copy_file(const char *name, const char *typed)
+{
+    char dst[SIO_PATH];
+    int rc;
+
+    if (resolve_dest(typed, name, dst) != 0) {
+        notify("Copy failed: not a usable destination.", typed);
+        return;
+    }
+    /* Opening the destination would empty the source before a byte of
+     * it was read, and DOS spells one file many ways (X, .\X, C:x). */
+    if (sio_same(name, dst)) {
+        notify("Source and destination are the same file.", dst);
+        return;
+    }
+    if (sio_exists(dst) && !confirm("Overwrite the existing file?", dst))
+        return;
+    ui_crit_take();                 /* report only this copy's error */
+    rc = sio_copy(name, dst);
+    if (rc != SIO_OK)
+        notify("Copy failed; the destination was not changed.",
+               copy_why(rc));
+}
+
+/* F6: move the file 'name' to 'typed'. */
+static void move_file(const char *name, const char *typed)
+{
+    char dst[SIO_PATH];
+    int rc, existed;
+
+    if (resolve_dest(typed, name, dst) != 0) {
+        notify("Move failed: not a usable destination.", typed);
+        return;
+    }
+    if (sio_same(name, dst)) {
+        notify("Source and destination are the same file.", dst);
+        return;
+    }
+    existed = sio_exists(dst);
+    if (existed && !confirm("Overwrite the existing file?", dst))
+        return;
+    ui_crit_take();
+    /* Same drive and nothing in the way: DOS just relinks the entry. */
+    if (!existed && rename(name, dst) == 0)
+        return;
+    rc = sio_copy(name, dst);
+    if (rc != SIO_OK) {
+        notify("Move failed; nothing was changed.", copy_why(rc));
+        return;
+    }
+    /* The original goes only now that its copy is complete and closed. */
+    if (remove(name) != 0)
+        notify("Copied, but the original could not be deleted.", name);
+}
+
+/* The drive and directory CASTFM was started in.  The current
+ * directory belongs to the whole DOS session, not to this program, so
+ * the menu and the next tool (CASTMARK writes its results into it)
+ * would otherwise inherit wherever the user browsed to. */
+static int  start_drive;
+static char start_dir[128];
+
 int main(void)
 {
     int sel = 0, top = 0, key;
     char dest[80], nm[16];
+
+    start_drive = cur_drive();
+    if (getcwd(start_dir, sizeof(start_dir)) == NULL)
+        start_dir[0] = '\0';
 
     ui_init();
     read_dir();
@@ -376,8 +476,8 @@ int main(void)
                 dest[0] = '\0';
                 if (prompt(" Copy to (path or name) ", dest, sizeof(dest))
                         && dest[0]) {
-                    if (copyfile(ents[sel].name, dest) == 0) read_dir();
-                    else notify("Copy failed.", dest);
+                    copy_file(ents[sel].name, dest);
+                    read_dir();
                 }
             }
         } else if (key == KEY_F6) {
@@ -385,10 +485,8 @@ int main(void)
                 strcpy(dest, "");
                 if (prompt(" Move to (path or name) ", dest, sizeof(dest))
                         && dest[0]) {
-                    if (rename(ents[sel].name, dest) == 0) read_dir();
-                    else if (copyfile(ents[sel].name, dest) == 0) {
-                        remove(ents[sel].name); read_dir();
-                    } else notify("Move failed.", dest);
+                    move_file(ents[sel].name, dest);
+                    read_dir();
                 }
             }
         } else if (key == KEY_F7) {
@@ -415,6 +513,12 @@ int main(void)
             }
         }
     }
+
+    /* getcwd() includes the drive, so chdir() resets that drive's
+     * directory whichever drive is current. */
+    set_drive(start_drive);
+    if (start_dir[0])
+        chdir(start_dir);
 
     ui_cls(UI_ATTR(C_LGRAY, C_BLACK));
     ui_done();

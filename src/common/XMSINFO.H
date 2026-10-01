@@ -31,6 +31,7 @@ int xms_version(unsigned *bcd);
 
 /* Free extended memory from the driver, in KB.  Either pointer may be
  * NULL.  Returns 1 on success, 0 if there is no driver or it refused.
+ * A driver with every KB allocated succeeds with 0: that is an answer.
  * Note this is FREE memory, not installed memory: the manager cannot
  * tell us how much other drivers have already taken. */
 int xms_free_kb(unsigned *largest, unsigned *total);
@@ -43,7 +44,8 @@ unsigned mem_ext_kb(int *source);
 /* One-line description for a status row, e.g.
  *      "3008 KB free (XMS driver 3.00)"
  *      "3072 KB (BIOS INT 15h)"
- *      "none reported"
+ *      "0 KB free (XMS driver 3.00)"   (driver loaded, all allocated)
+ *      "none reported (no XMS driver)"
  * `out` needs 48 bytes. */
 void mem_ext_describe(char *out);
 

@@ -80,8 +80,22 @@
 #define KEY_F10     0x144
 
 /* --- Lifecycle ------------------------------------------------------ */
-void ui_init(void);                 /* locate video memory, hide cursor */
-void ui_done(void);                 /* restore cursor for the shell     */
+void ui_init(void);                 /* text mode, hide cursor, INT 24h  */
+void ui_done(void);                 /* restore cursor and INT 24h       */
+
+/* --- Critical errors (INT 24h) ---------------------------------------
+ * Between ui_init() and ui_done() a disk error no longer prints DOS's
+ * "Abort, Retry, Ignore, Fail?" over the screen: the DOS call simply
+ * fails (fopen returns NULL, fwrite comes up short) and the error code
+ * is kept here.  ui_done() puts the previous handler back, so programs
+ * started through system() get the normal DOS prompt again.
+ *
+ * ui_crit_take() returns the code of the last critical error since the
+ * previous call (0 write-protected, 2 drive not ready, ... 12 general
+ * failure), or -1 if there was none, and clears it.  ui_crit_text()
+ * turns a code into a short phrase for a status line. */
+int         ui_crit_take(void);
+const char *ui_crit_text(int code);
 
 /* --- Drawing -------------------------------------------------------- */
 void ui_cls(unsigned char attr);

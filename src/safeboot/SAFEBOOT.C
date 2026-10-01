@@ -9,10 +9,13 @@
  *   - restore CONFIG.SYS / AUTOEXEC.BAT from C:\CASTALIA\BACKUP
  *   - save the current CONFIG.SYS / AUTOEXEC.BAT to the backup folder
  *   - write a known-good MINIMAL configuration that is guaranteed to
- *     boot to a prompt (backing up the current one first)
+ *     boot to a prompt (keeping the current one as CONFIG.SAF and
+ *     AUTOEXEC.SAF first, never over the backup that restore uses)
  *
  * File copying is done in C so the tool works even when the shell is in
- * a fragile state.  The system drive is assumed to be C:.
+ * a fragile state.  Every file is written under a temporary name and
+ * swapped in only when complete, so a failed write never leaves a
+ * truncated boot file.  The system drive is assumed to be C:.
  *
  * Build (Open Watcom):
  *   wcl -0 -bt=dos -ml -os safeboot.c ..\common\ui.c
@@ -24,73 +27,81 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../common/UI.H"
+#include "../common/SAFEIO.H"
 
 #define CFG_SYS   "C:\\CONFIG.SYS"
 #define CFG_BAT   "C:\\AUTOEXEC.BAT"
 #define BAK_SYS   "C:\\CASTALIA\\BACKUP\\CONFIG.SYS"
 #define BAK_BAT   "C:\\CASTALIA\\BACKUP\\AUTOEXEC.BAT"
+/* Where "write minimal" keeps the config it replaces.  Separate names,
+ * because BAK_* is the known-good copy that restore relies on, and the
+ * config being replaced is very likely the broken one. */
+#define SAF_SYS   "C:\\CASTALIA\\BACKUP\\CONFIG.SAF"
+#define SAF_BAT   "C:\\CASTALIA\\BACKUP\\AUTOEXEC.SAF"
 
-/* Copy one file.  Returns 0 on success, negative on error. */
-static int copyfile(const char *src, const char *dst)
+/* First line of every file write_minimal() produces. */
+#define MIN_MARK  "REM CASTALIA DOS - minimal safe config (written by SAFEBOOT)"
+
+/* 1 if 'path' is a config written by write_minimal(): there is nothing
+ * worth keeping in it, and copying it over CONFIG.SAF would replace the
+ * user's own config saved there by the previous run. */
+static int is_minimal(const char *path)
 {
-    FILE *in, *out;
-    char buf[2048];
-    size_t n;
+    char line[80];
+    int n, hit = 0;
+    FILE *fp = fopen(path, "r");
 
-    in = fopen(src, "rb");
-    if (in == NULL)
-        return -1;
-    out = fopen(dst, "wb");
-    if (out == NULL) {
-        fclose(in);
-        return -2;
-    }
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-        if (fwrite(buf, 1, n, out) != n) {
-            fclose(in);
-            fclose(out);
-            return -3;
-        }
-    }
-    fclose(in);
-    fclose(out);
-    return 0;
+    if (fp == NULL)
+        return 0;
+    for (n = 0; n < 3 && !hit && fgets(line, (int)sizeof(line), fp); n++)
+        hit = (strncmp(line, MIN_MARK, strlen(MIN_MARK)) == 0);
+    fclose(fp);
+    return hit;
 }
 
-static int file_exists(const char *p)
+/* Write one file of the minimal config through a temporary file.
+ * 'text' is the whole file, CR LF line ends included. */
+static int write_one(const char *path, const char *text)
 {
-    FILE *fp = fopen(p, "rb");
-    if (fp == NULL) return 0;
-    fclose(fp);
-    return 1;
+    char tmp[SIO_PATH];
+    FILE *fp;
+
+    if (sio_tmpname(path, tmp) != SIO_OK)
+        return -1;
+    /* Binary mode: the text carries its own CR LF, and text mode would
+     * turn each "\r\n" into CR CR LF. */
+    fp = fopen(tmp, "wb");
+    if (fp == NULL)
+        return -1;
+    fputs(text, fp);
+    if (sio_close(fp) != 0) {
+        remove(tmp);
+        return -1;
+    }
+    return sio_replace(tmp, path) == SIO_OK ? 0 : -1;
 }
 
 /* Write a minimal, guaranteed-bootable configuration. */
 static int write_minimal(void)
 {
-    FILE *fp;
-
-    fp = fopen(CFG_SYS, "w");
-    if (fp == NULL)
+    if (write_one(CFG_SYS,
+            MIN_MARK "\r\n"
+            "DEVICE=C:\\DOS\\HIMEMX.EXE\r\n"
+            "DOS=HIGH\r\n"
+            "FILES=20\r\n"
+            "BUFFERS=15\r\n"
+            "LASTDRIVE=M\r\n"
+            "SHELL=C:\\COMMAND.COM C:\\ /P /E:512\r\n") != 0)
         return -1;
-    fprintf(fp, "REM CASTALIA DOS - minimal safe config (written by SAFEBOOT)\r\n");
-    fprintf(fp, "DEVICE=C:\\DOS\\HIMEMX.EXE\r\n");
-    fprintf(fp, "DOS=HIGH\r\n");
-    fprintf(fp, "FILES=20\r\n");
-    fprintf(fp, "BUFFERS=15\r\n");
-    fprintf(fp, "LASTDRIVE=M\r\n");
-    fprintf(fp, "SHELL=C:\\COMMAND.COM C:\\ /P /E:512\r\n");
-    fclose(fp);
-
-    fp = fopen(CFG_BAT, "w");
-    if (fp == NULL)
+    if (write_one(CFG_BAT,
+            "@ECHO OFF\r\n"
+            MIN_MARK "\r\n"
+            "SET PATH=C:\\CASTALIA\\BIN;C:\\DOS;C:\\\r\n"
+            "PROMPT $P$G\r\n"
+            "ECHO CASTALIA DOS - minimal safe configuration active.\r\n"
+            "ECHO Type CASTALIA for the menu, or restore a full config.\r\n")
+            != 0)
         return -2;
-    fprintf(fp, "@ECHO OFF\r\n");
-    fprintf(fp, "SET PATH=C:\\CASTALIA\\BIN;C:\\DOS;C:\\\r\n");
-    fprintf(fp, "PROMPT $P$G\r\n");
-    fprintf(fp, "ECHO CASTALIA DOS - minimal safe configuration active.\r\n");
-    fprintf(fp, "ECHO Type CASTALIA for the menu, or restore a full config.\r\n");
-    fclose(fp);
     return 0;
 }
 
@@ -123,10 +134,10 @@ static void draw_screen(int sel)
     /* Status panel. */
     ui_box(4, 2, 72, 7, A_FRAME);
     ui_puts(6, 2, " Status ", A_TITLE);
-    yn(file_exists(CFG_SYS), a); yn(file_exists(CFG_BAT), b);
+    yn(sio_exists(CFG_SYS), a); yn(sio_exists(CFG_BAT), b);
     sprintf(line, "Current : CONFIG.SYS %-8s   AUTOEXEC.BAT %-8s", a, b);
     ui_puts(6, 4, line, A_ITEM);
-    yn(file_exists(BAK_SYS), a); yn(file_exists(BAK_BAT), b);
+    yn(sio_exists(BAK_SYS), a); yn(sio_exists(BAK_BAT), b);
     sprintf(line, "Backup  : CONFIG.SYS %-8s   AUTOEXEC.BAT %-8s", a, b);
     ui_puts(6, 5, line, A_ITEM);
     ui_puts(6, 7, "Backups live in C:\\CASTALIA\\BACKUP.", A_HINT);
@@ -179,7 +190,7 @@ static void report(const char *l1, const char *l2)
 static void act_restore(void)
 {
     int r1, r2;
-    if (!file_exists(BAK_SYS) && !file_exists(BAK_BAT)) {
+    if (!sio_exists(BAK_SYS) && !sio_exists(BAK_BAT)) {
         report("No backup found in C:\\CASTALIA\\BACKUP.",
                "Use action 2 first, or install with SETUP.");
         return;
@@ -187,8 +198,8 @@ static void act_restore(void)
     if (!confirm("Restore CONFIG.SYS and AUTOEXEC.BAT from backup?",
                  "This overwrites the current boot files."))
         return;
-    r1 = file_exists(BAK_SYS) ? copyfile(BAK_SYS, CFG_SYS) : 0;
-    r2 = file_exists(BAK_BAT) ? copyfile(BAK_BAT, CFG_BAT) : 0;
+    r1 = sio_exists(BAK_SYS) ? sio_copy(BAK_SYS, CFG_SYS) : 0;
+    r2 = sio_exists(BAK_BAT) ? sio_copy(BAK_BAT, CFG_BAT) : 0;
     if (r1 == 0 && r2 == 0)
         report("Restored from backup.", "Reboot for the changes to apply.");
     else
@@ -199,26 +210,39 @@ static void act_restore(void)
 static void act_backup(void)
 {
     int r1, r2;
-    if (!confirm("Save the current CONFIG.SYS and AUTOEXEC.BAT",
-                 "to C:\\CASTALIA\\BACKUP?"))
+    if (!confirm("Save the current CONFIG.SYS and AUTOEXEC.BAT to",
+                 (sio_exists(BAK_SYS) || sio_exists(BAK_BAT)) ?
+                 "C:\\CASTALIA\\BACKUP, replacing the backup there?" :
+                 "C:\\CASTALIA\\BACKUP?"))
         return;
-    r1 = file_exists(CFG_SYS) ? copyfile(CFG_SYS, BAK_SYS) : -9;
-    r2 = file_exists(CFG_BAT) ? copyfile(CFG_BAT, BAK_BAT) : -9;
-    if (r1 == 0 || r2 == 0)      /* at least one file backed up */
+    r1 = sio_exists(CFG_SYS) ? sio_copy(CFG_SYS, BAK_SYS) : -9;
+    r2 = sio_exists(CFG_BAT) ? sio_copy(CFG_BAT, BAK_BAT) : -9;
+    /* -9 = no such file to save.  Any real failure is reported, even
+     * when the other file made it. */
+    if ((r1 == 0 || r1 == -9) && (r2 == 0 || r2 == -9) && (r1 == 0 || r2 == 0))
         report("Saved to C:\\CASTALIA\\BACKUP.", "");
+    else if (r1 == -9 && r2 == -9)
+        report("Nothing to back up.", "There is no CONFIG.SYS or AUTOEXEC.BAT.");
     else
-        report("Backup failed or nothing to back up.",
-               "Ensure C:\\CASTALIA\\BACKUP exists.");
+        report("Backup failed; an old backup there is unchanged.",
+               "Is C:\\CASTALIA\\BACKUP there and writable?");
 }
 
 static void act_minimal(void)
 {
     if (!confirm("Write a minimal safe configuration?",
-                 "Your current config is saved to backup first."))
+                 "Current files are kept in BACKUP as *.SAF first."))
         return;
-    /* Save the current config before overwriting it. */
-    if (file_exists(CFG_SYS)) copyfile(CFG_SYS, BAK_SYS);
-    if (file_exists(CFG_BAT)) copyfile(CFG_BAT, BAK_BAT);
+    /* Keep the config being replaced, but under its own name, and stop
+     * if that fails: overwriting the only copy of it is not "safe". */
+    if ((sio_exists(CFG_SYS) && !is_minimal(CFG_SYS) &&
+         sio_copy(CFG_SYS, SAF_SYS) != SIO_OK) ||
+        (sio_exists(CFG_BAT) && !is_minimal(CFG_BAT) &&
+         sio_copy(CFG_BAT, SAF_BAT) != SIO_OK)) {
+        report("Current config not saved; nothing was changed.",
+               "Is C:\\CASTALIA\\BACKUP there and writable?");
+        return;
+    }
     if (write_minimal() == 0)
         report("Minimal safe config written.",
                "Reboot; you will get a plain prompt that boots.");

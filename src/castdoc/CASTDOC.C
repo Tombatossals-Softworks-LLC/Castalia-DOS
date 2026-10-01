@@ -11,8 +11,14 @@
  * DISKETTE from a failing DRIVE.
  *
  * Scope and honesty:
- *   - 100% NON-DESTRUCTIVE: only INT 13h AH=04h (verify) is used.  It
- *     never writes, never "repairs".
+ *   - 100% NON-DESTRUCTIVE: only INT 13h AH=04h (verify) and, for a
+ *     floppy, one AH=02h read of the boot sector are used.  It never
+ *     writes, never "repairs".
+ *   - A floppy is scanned with the geometry of the DISKETTE, taken from
+ *     its boot-sector BPB, not the drive's maximum: a 720 KB disk in a
+ *     1.44 MB drive has 9 sectors per track, not 18, and verifying 18
+ *     would fail every track.  Without a valid BPB the drive geometry
+ *     is used, and the screen says which one it was.
  *   - FAT logical-structure checking stays with FreeDOS CHKDSK; this
  *     tool is about the physical surface and the drive.
  *   - Floppies get a FULL verify of every track.  Hard disks default to
@@ -36,8 +42,33 @@
     ((void far *)(((unsigned long)(seg) << 16) | (unsigned)(ofs)))
 #endif
 
-/* Verify buffer: some BIOSes want ES:BX valid even for AH=04h. */
-static char vbuf[9216];             /* 18 sectors x 512 bytes */
+/* Transfer buffer.  Some BIOSes want ES:BX valid even for AH=04h, and
+ * the IBM-style floppy code programs the 8237 DMA for verify as well as
+ * read: a span that straddles a physical 64 KB boundary is refused with
+ * status 09h, whatever the medium.  So twice one span is reserved and
+ * vbuf_pick() points vbuf at a part of it that stays inside one 64 KB
+ * page.  A span is 18 sectors, a 1.44 MB track; the rare 36-sector
+ * (2.88 MB) track is verified in two halves rather than doubling this
+ * array, which would push it out of DGROUP's BSS and add 36 KB of zeros
+ * to the .EXE.  Hard disks verify a whole track from the same address:
+ * their controllers do not use DMA and AH=04h moves no data. */
+#define VSECS   18
+#define VSPAN   ((unsigned)VSECS * 512u)
+static char vraw[2 * VSPAN];
+static char far *vbuf;
+
+static void vbuf_pick(void)
+{
+    char far *p = (char far *)vraw;
+    unsigned long lin, room;
+
+    lin  = ((unsigned long)FP_SEG(p) << 4) + (unsigned long)FP_OFF(p);
+    room = 0x10000UL - (lin & 0xFFFFUL);    /* bytes before next page */
+    if (room >= (unsigned long)VSPAN)
+        vbuf = p;
+    else
+        vbuf = p + (unsigned)room;  /* after the boundary: >= VSPAN left */
+}
 
 /* --- INT 13h primitives ------------------------------------------------ */
 
@@ -78,8 +109,8 @@ static int bios_verify(int drv, int cyl, int head, int sec, int count)
     union REGS r;
     struct SREGS s;
     segread(&s);
-    s.es   = FP_SEG((void far *)vbuf);
-    r.x.bx = FP_OFF((void far *)vbuf);
+    s.es   = FP_SEG(vbuf);
+    r.x.bx = FP_OFF(vbuf);
     r.h.ah = 0x04;
     r.h.al = (unsigned char)count;
     r.h.ch = (unsigned char)(cyl & 0xFF);
@@ -92,17 +123,92 @@ static int bios_verify(int drv, int cyl, int head, int sec, int count)
     return 0;
 }
 
-/* Verify one whole track with reset+retry.  0 = OK, else last status. */
+/* Verify one whole track with reset+retry.  0 = OK, else last status.
+ * A floppy track is taken at most VSECS sectors per call, so the DMA
+ * span never outgrows vbuf (see above). */
 static int verify_track(int drv, int cyl, int head, int spt)
 {
-    int rc, attempt;
+    int rc = 0, attempt, first, n;
     for (attempt = 0; attempt < 3; attempt++) {
-        rc = bios_verify(drv, cyl, head, 1, spt);
+        for (first = 1; first <= spt; first += n) {
+            n = spt - first + 1;
+            if (drv < 0x80 && n > VSECS)
+                n = VSECS;
+            rc = bios_verify(drv, cyl, head, first, n);
+            if (rc != 0)
+                break;
+        }
         if (rc == 0)
             return 0;
         bios_reset(drv);
     }
     return rc;
+}
+
+/* Read the boot sector (C0 H0 S1) into vbuf, with reset+retry: the
+ * first access after a disk change reports 06h or a timeout while the
+ * motor spins up.  0 = OK, else last BIOS status. */
+static int read_boot(int drv)
+{
+    union REGS r;
+    struct SREGS s;
+    int attempt, rc = 0xFF;
+    for (attempt = 0; attempt < 3; attempt++) {
+        segread(&s);
+        s.es   = FP_SEG(vbuf);
+        r.x.bx = FP_OFF(vbuf);
+        r.h.ah = 0x02;
+        r.h.al = 1;
+        r.h.ch = 0;
+        r.h.cl = 1;
+        r.h.dh = 0;
+        r.h.dl = (unsigned char)drv;
+        int86x(0x13, &r, &r, &s);
+        if (!r.x.cflag)
+            return 0;
+        rc = r.h.ah ? (int)r.h.ah : 0xFF;
+        bios_reset(drv);
+    }
+    return rc;
+}
+
+static unsigned bpb_word(int off)
+{
+    return (unsigned)(unsigned char)vbuf[off]
+         | ((unsigned)(unsigned char)vbuf[off + 1] << 8);
+}
+
+/* Geometry of the DISKETTE from its BPB, if the boot sector carries a
+ * believable one; 'maxcyl' is the drive's cylinder count, which a real
+ * diskette in this drive cannot exceed.  0 = filled in, -1 = no valid
+ * BPB (DOS 1.x disks have none; unformatted or foreign disks hold junk). */
+static int bpb_geometry(int maxcyl, int *cyls, int *heads, int *spt)
+{
+    unsigned bps, ns, nh;
+    unsigned long total, pertrk;
+
+    bps = bpb_word(11);
+    ns  = bpb_word(24);
+    nh  = bpb_word(26);
+    total = (unsigned long)bpb_word(19);
+    if (total == 0)                     /* > 65535 sectors: 32-bit field */
+        total = (unsigned long)bpb_word(32)
+              | ((unsigned long)bpb_word(34) << 16);
+
+    if (bps != 512 || ns < 8 || ns > 36 || nh < 1 || nh > 2)
+        return -1;
+    /* A FAT floppy is whole cylinders: anything else is not a BPB we can
+     * scan by, and a cylinder count beyond the drive's is not this disk. */
+    pertrk = (unsigned long)ns * nh;
+    if (total == 0 || total % pertrk != 0)
+        return -1;
+    if (total / pertrk > (unsigned long)maxcyl)
+        return -1;
+
+    *cyls  = (int)(total / pertrk);
+    *heads = (int)nh;
+    *spt   = (int)ns;
+    return 0;
 }
 
 static const char *status_name(int code)
@@ -114,6 +220,8 @@ static const char *status_name(int code)
     case 0x04: return "sector not found";
     case 0x06: return "media changed";
     case 0x08: return "DMA overrun";
+    case 0x09: return "DMA 64K boundary";
+    case 0x0C: return "media type not found";
     case 0x10: return "CRC/data error";
     case 0x20: return "controller failure";
     case 0x40: return "seek failure";
@@ -354,7 +462,7 @@ static void show_errors_summary(void)
 static void inspect_drive(int drv, const char *label, int isfloppy)
 {
     int cyls, heads, spt, type;
-    int bad, key, full = 0;
+    int bad, key, rc, full = 0;
     char buf[78];
     long total_kb;
 
@@ -373,15 +481,30 @@ static void inspect_drive(int drv, const char *label, int isfloppy)
     }
 
     total_kb = (long)cyls * heads * spt / 2;
-    if (isfloppy)
-        sprintf(buf, "Type: %s   Geometry: %d cyl x %d heads x %d spt"
-                "   (%ld KB)",
-                floppy_type_name(type), cyls, heads, spt, total_kb);
-    else
+    if (isfloppy) {
+        sprintf(buf, "Drive: %s   max %d cyl x %d heads x %d spt",
+                floppy_type_name(type), cyls, heads, spt);
+        ui_putlim(3, 4, buf, 74, UI_ATTR(C_YELLOW, C_BLUE));
+        /* The drive maximum is only right for a full-capacity disk; the
+         * BPB says what is actually in the drive.  The read also tells
+         * us early that there is no diskette at all. */
+        rc = read_boot(drv);
+        if (rc == 0 && bpb_geometry(cyls, &cyls, &heads, &spt) == 0) {
+            total_kb = (long)cyls * heads * spt / 2;
+            sprintf(buf, "Diskette (from boot sector): %d cyl x %d heads"
+                    " x %d spt   (%ld KB)", cyls, heads, spt, total_kb);
+        } else if (rc == 0) {
+            sprintf(buf, "Diskette: no valid boot-sector BPB - using the"
+                    " drive maximum (%ld KB)", total_kb);
+        } else {
+            sprintf(buf, "Boot sector unreadable (%s): using the drive"
+                    " maximum", status_name(rc));
+        }
+    } else
         sprintf(buf, "Geometry (BIOS CHS): %d cyl x %d heads x %d spt"
                 "   (~%ld MB)",
                 cyls, heads, spt, total_kb / 1024L);
-    ui_putlim(3, 4, buf, 74, UI_ATTR(C_YELLOW, C_BLUE));
+    ui_putlim(3, isfloppy ? 5 : 4, buf, 74, UI_ATTR(C_YELLOW, C_BLUE));
 
     if (isfloppy)
         ui_puts(3, 6, "ENTER: full surface verify (every track, read-only)"
@@ -452,6 +575,7 @@ int main(void)
     enabled[1] = (nfd >= 2);
     enabled[2] = (nhd >= 1);
 
+    vbuf_pick();
     ui_init();
     for (;;) {
         title_bar();

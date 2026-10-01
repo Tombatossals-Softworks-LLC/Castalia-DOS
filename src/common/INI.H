@@ -37,6 +37,11 @@
  * contents.  Returns one of the INI_* codes above. */
 int ini_open(const char *path);
 
+/* Lines or [sections] of the loaded file that did not fit INI_MAX_LINES
+ * or INI_MAX_SECTIONS and are invisible to the getters.  A tool that
+ * rewrites the file must not save over it while this is non-zero. */
+int ini_dropped(void);
+
 /* Number of [sections] found in the currently-loaded file. */
 int ini_section_count(void);
 
@@ -53,8 +58,11 @@ const char *ini_get(const char *section, const char *key);
 const char *ini_get_def(const char *section, const char *key,
                         const char *def);
 
-/* Convenience: integer value (base 10) or 'def' when missing/invalid. */
-int ini_get_int(const char *section, const char *key, int def);
+/* Convenience: integer value (base 10) or 'def' when missing/invalid.
+ * ini_get_int also returns 'def' when the value does not fit an int,
+ * which on the DOS build means outside -32768..32767. */
+int  ini_get_int(const char *section, const char *key, int def);
+long ini_get_long(const char *section, const char *key, long def);
 
 /* Convenience: 1 if the value looks true (yes/on/true/1), 0 if it looks
  * false (no/off/false/0), else 'def'. */

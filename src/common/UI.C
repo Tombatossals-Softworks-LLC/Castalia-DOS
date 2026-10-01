@@ -66,16 +66,102 @@ static unsigned short far *ui_cells = (unsigned short far *)0;
  * the index stays inside an unsigned int on a 16-bit build. */
 #define UI_AT(x, y)  (ui_cells + (unsigned)(y) * SCR_W + (unsigned)(x))
 
+/* --- Critical errors -------------------------------------------------
+ * Watcom's _harderr() does the INT 24h plumbing (stack and DS) and calls
+ * this with DI's low byte as the error code.  The handler runs inside
+ * DOS, so it only records the code and answers FAIL; it must not touch
+ * DOS itself, and stack checking would trip on the DOS stack. */
+static volatile int crit_last = -1;
+
+#ifdef __WATCOMC__
+static void (__interrupt __far *crit_prev)() = 0;
+
+#pragma off (check_stack)
+static int __far crit_handler(unsigned deverr, unsigned errcode,
+                              unsigned __far *devhdr)
+{
+    (void)deverr;
+    (void)devhdr;
+    crit_last = (int)(errcode & 0xFF);
+    return _HARDERR_FAIL;
+}
+#pragma on (check_stack)
+
+static void crit_install(void)
+{
+    if (crit_prev == 0) {
+        crit_prev = _dos_getvect(0x24);
+        _harderr(crit_handler);
+    }
+}
+
+static void crit_remove(void)
+{
+    if (crit_prev != 0) {
+        _dos_setvect(0x24, crit_prev);
+        crit_prev = 0;
+    }
+}
+#else
+static void crit_install(void) { }
+static void crit_remove(void)  { }
+#endif
+
+int ui_crit_take(void)
+{
+    int code = crit_last;
+    crit_last = -1;
+    return code;
+}
+
+const char *ui_crit_text(int code)
+{
+    static const char *text[] = {
+        "disk is write-protected", "unknown unit", "drive not ready",
+        "unknown command", "data error (CRC)", "bad request",
+        "seek error", "unknown media type", "sector not found",
+        "printer out of paper", "write fault", "read fault",
+        "general failure"
+    };
+    if (code < 0)
+        return "no error";
+    if (code > 12)
+        return "disk error";
+    return text[code];
+}
+
 /* --- Lifecycle ------------------------------------------------------ */
+
+#ifndef UI_VRAM_MONO
+#define UI_VRAM_MONO MK_FP(0xB000, 0x0000)
+#endif
 
 void ui_init(void)
 {
-    ui_cells = (unsigned short far *)UI_VRAM_BASE;
+    union REGS r;
+
+    /* A game or a crashed program can leave the adapter in a graphics
+     * or 40-column mode; drawing into B800 then shows nothing.  Text
+     * modes 2 and 3 are used as they are, mode 7 is the monochrome
+     * adapter at B000, anything else is put back to mode 3. */
+    r.x.ax = 0x0F00;
+    int86(0x10, &r, &r);
+    if ((r.h.al & 0x7F) == 7) {
+        ui_cells = (unsigned short far *)UI_VRAM_MONO;
+    } else {
+        if ((r.h.al & 0x7F) != 2 && (r.h.al & 0x7F) != 3) {
+            r.x.ax = 0x0003;
+            int86(0x10, &r, &r);
+        }
+        ui_cells = (unsigned short far *)UI_VRAM_BASE;
+    }
     ui_cursor(0);
+    crit_install();
 }
 
 void ui_done(void)
 {
+    crit_remove();
     ui_gotoxy(0, SCR_H - 1);
     ui_cursor(1);
 }
@@ -247,8 +333,19 @@ int ui_keywaiting(void)
 
 unsigned long ui_ticks(void)
 {
-    unsigned long far *t = (unsigned long far *)MK_FP(0x0040, 0x006C);
-    return *t;
+    /* An 8086 build reads the 32-bit counter as two words, and the timer
+     * interrupt can land between them: when the low word rolls over the
+     * result is off by 65536 ticks.  Two equal reads in a row cannot both
+     * be torn. */
+    volatile unsigned long far *t =
+        (volatile unsigned long far *)MK_FP(0x0040, 0x006C);
+    unsigned long a, b;
+
+    do {
+        a = *t;
+        b = *t;
+    } while (a != b);
+    return a;
 }
 
 void ui_idle(void)

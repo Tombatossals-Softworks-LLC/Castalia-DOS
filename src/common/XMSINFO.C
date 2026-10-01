@@ -57,6 +57,16 @@ extern unsigned xms_fn_total(void);
     "call dword ptr xms_entry"          \
     value [dx] modify [ax bx dx];
 
+/* The same query once more for BL: 80h/81h mean the driver refused, A0h
+ * that every KB is already allocated.  Only consulted when both sizes
+ * came back 0, which is the one case the sizes cannot tell apart. */
+extern unsigned xms_fn_status(void);
+#pragma aux xms_fn_status =             \
+    "mov ah, 8"                         \
+    "xor bl, bl"                        \
+    "call dword ptr xms_entry"          \
+    value [bx] modify [ax bx dx];
+
 /* Locate the driver once and cache the answer.
  * 0 = looked and found nothing, 1 = entry point ready, -1 = not asked. */
 static int xms_state = -1;
@@ -115,11 +125,16 @@ int xms_free_kb(unsigned *largest, unsigned *total)
     lg = xms_fn_largest();
     tt = xms_fn_total();
 
-    /* AX = 0 means the driver refused and put an error code in BL.  We
-     * do not report an error code we did not capture; we report that we
-     * have no figure. */
-    if (lg == 0 && tt == 0)
-        return 0;
+    /* Both 0 is either a refusal (an error code in BL) or a driver that
+     * really has nothing left - every KB handed out, BL = A0h.  The
+     * second is a true answer, "0 KB free", and must not fall through
+     * to INT 15h, which reads 0 under the driver and would turn it into
+     * "none reported".  A refusal still means we have no figure. */
+    if (lg == 0 && tt == 0) {
+        unsigned bl = xms_fn_status() & 0xFFu;
+        if (bl != 0x00u && bl != 0xA0u)
+            return 0;
+    }
 
     if (largest != NULL) *largest = lg;
     if (total   != NULL) *total   = tt;
@@ -155,7 +170,9 @@ unsigned mem_ext_kb(int *source)
 {
     unsigned total = 0, bios;
 
-    if (xms_free_kb(NULL, &total) && total > 0) {
+    /* A driver that answers is the authority even when it answers 0:
+     * the BIOS figure under it is 0 by design, not a second opinion. */
+    if (xms_free_kb(NULL, &total)) {
         if (source != NULL) *source = XMEM_XMS;
         return total;
     }
