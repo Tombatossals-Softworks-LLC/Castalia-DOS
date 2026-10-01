@@ -15,6 +15,12 @@ experience.
 > Current design target: **1.0 "Tombatossals"**
 > Foundation: **FreeDOS** (legal, open source) + original Castalia tooling
 
+**Status:** the 1.0 "Tombatossals" build runs on a real 386SX. It boots to the
+menu on the CLEAN and EMS profiles, and the game launcher, `CASTMARK`, `HWINFO`,
+`CASTID` and a VGA game all run. The `CASTMARK` disk benchmark still fails on
+that machine. See
+[`tests/results/2026-10-01-dabellan-386sx-real.md`](tests/results/2026-10-01-dabellan-386sx-real.md).
+
 ---
 
 ## What it is / what it is not
@@ -53,12 +59,12 @@ castalia-dos/
 │   ├── common/              INI parser + text-mode UI library
 │   ├── launch/              LAUNCH.EXE  (game launcher)
 │   ├── castalia/            CASTALIA.EXE (main menu)
-│   ├── memprof/  setsound/  hwinfo/  setup/   (planned tools)
+│   └── <tool>/              one directory per tool (see docs/APPS.md)
 ├── build/                   Build output (.obj / .exe)
 ├── dist/                    Release images (floppy/ZIP/ISO/CF)
 ├── floppy/                  Floppy-image staging
 ├── scripts/                 Build + image scripts
-├── third_party/             FreeDOS + other GPL/open components (with source)
+├── third_party/             Notes on the FreeDOS components (fetched at build time)
 ├── tools/                   Host-side helper tools
 └── tests/                   Test assets and logs
 ```
@@ -101,7 +107,7 @@ hosts on Linux/Windows/macOS, produces 16-bit real-mode DOS executables).
 
 ```sh
 # with the Open Watcom environment loaded (owsetenv.sh / setvars):
-wmake            # builds launch, castalia, hwinfo, setsound, memprof (-> build/)
+wmake            # builds every tool (-> build/)
 wmake clean      # removes build products
 wmake hwinfo     # build just one tool
 ```
@@ -137,7 +143,7 @@ Local, fast (gcc only):
 
 ```sh
 scripts/check.sh      # gate: C89 syntax of every tool, shell lint, repo sanity
-scripts/test-unit.sh  # unit tests: the real INI module compiled natively (39 checks)
+scripts/test-unit.sh  # unit tests: the real INI, UI, SPK, CASTMARK and CASTLINK code, natively
 ```
 
 Full pipeline (what CI runs on every push —
@@ -145,8 +151,8 @@ Full pipeline (what CI runs on every push —
 
 1. **check** — the repository gate.
 2. **unit** — host unit tests against the real DOS sources.
-3. **build** — the real 16-bit build: Open Watcom V2 compiles all 20 tools +
-   the DOS smoke test; `scripts/verify-exes.sh` asserts every MZ executable;
+3. **build** — the real 16-bit build: Open Watcom V2 compiles every tool +
+   the DOS test programs; `scripts/verify-exes.sh` asserts every MZ executable;
    artifacts uploaded.
 4. **e2e** — `scripts/fetch-payload.sh` downloads the FreeDOS payload
    (cached), `scripts/test-dos.sh` runs `SMOKE.EXE` *inside headless DOSBox*
@@ -184,7 +190,8 @@ and [`docs/BOOT.md`](docs/BOOT.md); the working files are in [`config/`](config/
 CASTALIA DOS is assembled from FreeDOS and other open/free components plus
 original Castalia work. It reproduces **no** proprietary Microsoft material.
 Original Castalia code is MIT-licensed; documentation is CC BY 4.0; modified
-FreeDOS components remain GPLv2+ and ship with source in `third_party/`.
+FreeDOS components remain GPLv2+; their source is published beside each
+release image (`scripts/fetch-payload.sh --with-sources`).
 See [`docs/LICENSE-STRATEGY.md`](docs/LICENSE-STRATEGY.md) and
 [`LICENSES/`](LICENSES/).
 

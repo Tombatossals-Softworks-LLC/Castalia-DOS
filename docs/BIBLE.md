@@ -54,13 +54,13 @@ castalia-dos/
 │   ├── common/            ini.c/.h, ui.c/.h  (shared libraries)
 │   ├── launch/            LAUNCH.C  (game launcher)
 │   ├── castalia/          CASTALIA.C (main menu)
-│   ├── memprof/  setsound/  hwinfo/  setup/   (planned tools)
+│   └── <tool>/            one directory per tool (see APPS.md)
 ├── build/                 build output (.obj/.exe)
 ├── dist/                  release images (floppy/ZIP/ISO/CF)
 ├── floppy/                floppy-image staging (payload/, boot sector)
 ├── help/                  plain-text help pages + HELP.IDX
 ├── scripts/               build-floppy.md (+ future .sh)
-├── third_party/           vendored FreeDOS + open components (with source)
+├── third_party/           notes on the FreeDOS components (fetched at build time)
 ├── tools/                 host-side helpers, emulator configs
 └── tests/                 test assets and logs
 ```

@@ -5,6 +5,11 @@
 > this section is measured against a real Intel 386SX at 16 MHz with 1-2 MB
 > of RAM, a slow IDE/CompactFlash disk, and no math coprocessor. If a feature
 > is not pleasant on that machine, it is not shipped enabled by default.
+>
+> This budget floor is deliberately weaker than the machine `CASTMARK`
+> calibrates against (a 386SX/16 with 4 MB and a 387; see
+> `src/castmark/CASTMARK.C`): the benchmark needs a typical machine to
+> score 100, the budget needs the worst one to stay pleasant.
 
 The guiding rule of the whole project applies doubly here: **compatibility and
 speed beat elegance.** A tool that starts instantly, uses almost no memory, and

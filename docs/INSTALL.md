@@ -177,7 +177,20 @@ before copying, so disks inserted out of order are caught.
 - **Free-space check** before copying (refuse if the target can't hold the
   payload).
 - **Existing-config backup** is mandatory and happens before any root file is
-  written.
+  written. If it fails, Setup stops with the root files untouched.
+
+What ends up in `C:\CASTALIA\BACKUP` and `C:\CASTALIA\CFG`:
+
+| File | Written by | Holds |
+|---|---|---|
+| `BACKUP\CONFIG.ORG`, `AUTOEXEC.ORG` | first Setup run only | the pre-Castalia files; nothing ever rewrites them |
+| `BACKUP\CONFIG.SYS`, `AUTOEXEC.BAT` | Setup, the menu's Backup, CFGEDIT | the working backup SAFEBOOT restores |
+| `BACKUP\CONFIG.OLD`, `AUTOEXEC.OLD` | a repeat Setup run | the config that run replaced |
+| `BACKUP\CONFIG.SAF`, `AUTOEXEC.SAF` | SAFEBOOT "write minimal config" | the config it replaced |
+| `CFG\*.USR` | Setup, left behind only if it cannot put them back | your `CASTALIA.INI`, `PROFILES.INI`, `GAMES.INI`, set aside while the media's files are copied; rename them back to `.INI` |
+
+Re-running Setup keeps your own `CASTALIA.INI`, `PROFILES.INI` and
+`GAMES.INI`; it does not reset them to the shipped versions.
 - **Write confirmation** (step 6) lists every destructive action explicitly.
 - **Boot-sector write** only after files are copied, so a failure mid-copy
   leaves the old system still bootable.

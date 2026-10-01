@@ -10,7 +10,7 @@ repository to a stable 1.0 release, plus one exploratory phase beyond. It is
 written for the realistic case: a **solo maintainer or a very small team**
 (one to three people, evenings and weekends), building on **FreeDOS** and other
 open/free DOS components, with all original Castalia code under **MIT** and all
-modified GPL components kept in `third_party/` with source.
+modified GPL components fetched at build time and published with their source.
 
 The plan front-loads two things that are cheap to get wrong and expensive to
 fix later: **legal cleanliness** and **bootability on real hardware**. Features,
@@ -180,8 +180,11 @@ Pinned component stack recorded in `docs/COMPONENTS.md`:
 
 ### Risks
 - **Provenance drift:** a "convenient" binary of unknown origin sneaks in.
-  *Mitigation:* every `third_party/` component must ship with source + upstream
-  URL + license, enforced by `tools/verify-licenses.sh` in CI.
+  *Mitigation:* every vendored component must ship with source + upstream
+  URL + license. Today that is enforced by the pinned digests in
+  `scripts/payload.sha256` and by `fetch-payload.sh --with-sources`, which
+  fails when a component has no source archive; `tools/verify-licenses.sh` is
+  still a plan.
 - **MIT/GPL contamination:** static-linking GPL code into MIT tools would force
   relicensing. *Mitigation:* architectural rule — Castalia tools are *separate
   executables/drivers* that talk to FreeDOS components; **never** static-link
@@ -905,7 +908,8 @@ These hold throughout and are release gates, not afterthoughts:
 
 - **Legal separation** — Castalia MIT code and GPL FreeDOS components stay
   cleanly split (`third_party/`), source shipped, no static-linking across the
-  boundary; `tools/verify-licenses.sh` runs in CI every phase.
+  boundary; CI checks every download against a pinned digest and stages every
+  component's source (`tools/verify-licenses.sh` is still a plan).
 - **Version honesty** — kernel reports FreeDOS 7.x; Castalia presents
   6.22-*compatible behaviour*; `SETVER` is per-program only. No global spoof.
 - **Two-tier testing** — DOSBox-X + 86Box/PCem for iteration; real 386SX/486 for
@@ -939,8 +943,8 @@ in [`APPS.md`](APPS.md).
 | CASTALIA.EXE menu v2 | Submenus: System & Benchmark / Disk Tools / Minigames / Configuration — the whole suite reachable from the front end | `src/castalia/` |
 | `HELP.EXE` | The help-system reader designed in HELP.md, finally implemented: HELP.IDX topic index (shared INI), full-screen pager, `HELP <topic>` prefix jump; wired to the menu's Help item | `src/help/` |
 | `CASTEDIT.EXE` | General text editor (QEdit-class ambition, line-oriented engine): any file, `.BAK` on every save, save-as, new-file support; menu item 3 | `src/castedit/` |
-| CI pipeline + tests | check gate → host unit tests (INI, 39 checks) → real Open Watcom build with MZ verification → E2E: FreeDOS payload fetch, SMOKE.EXE inside headless DOSBox, bootable image build, and a real **boot test** asserting the AUTOEXEC marker. Floppy-specific CONFIG.SYS/AUTOEXEC.BAT added (the HDD `SHELL=C:\...` config could not boot from A: — found by the boot e2e); HDD templates ride in `::/INSTALL/` and SETUP prefers them | `.github/workflows/ci.yml`, `scripts/`, `tests/`, `config/floppy/` |
-| `CPUDET`, `DIRW` common modules | Shared CPU/FPU probes (compiled `-3`) and portable dir scanning; HWINFO/CASTFM refactored onto them | `src/common/` |
+| CI pipeline + tests | check gate → host unit tests (INI, UI, SPK, CASTMARK, CASTLINK) → real Open Watcom build with MZ verification → E2E: FreeDOS payload fetch, SMOKE.EXE inside headless DOSBox, bootable image build, and a real **boot test** asserting the AUTOEXEC marker. Floppy-specific CONFIG.SYS/AUTOEXEC.BAT added (the HDD `SHELL=C:\...` config could not boot from A: — found by the boot e2e); HDD templates ride in `::/INSTALL/` and SETUP prefers them | `.github/workflows/ci.yml`, `scripts/`, `tests/`, `config/floppy/` |
+| `CPUDET`, `DIRW` common modules | Shared CPU/FPU probes (byte-encoded, so built at `-0` like everything else) and portable dir scanning; HWINFO/CASTFM refactored onto them | `src/common/` |
 
 ### Addendum A.2 — the Castalia kernel and the second wave (2026-07)
 
@@ -962,8 +966,8 @@ in [`APPS.md`](APPS.md).
 
 | Item | Notes |
 |---|---|
-| Calibrate `CASTMARK` baselines on real hardware | 386SX/16 must land near index 100; record runs in `APPS.md` |
-| Hardware pass for the new kernel calls | `CA00h`/`CA01h`/`CA02h` and the `0xCA` OEM id verified on metal, not just in the emulator |
+| Calibrate `CASTMARK` baselines on real hardware | First real 386SX run (2026-10-01): CPU x1.2, FPU x0.9, video x1.1 of the 86Box anchors, memory copy x0.4, disk read failed. See `tests/results/2026-10-01-dabellan-386sx-real.md` |
+| ~~Hardware pass for the new kernel calls~~ | done on a real 386SX (2026-10-01): `CASTID` reads build, edition, OEM `0xCA`, profile and uptime |
 | Exercise `CDPLAYER` on a real drive | the MSCDEX path is written to spec but has never met a physical CD |
 | ~~More minigames (solitaire)~~ | done — `SOLITARE.EXE` |
 | ~~Migrate legacy inline editors~~ | done — CFGEDIT/GAMECFG now use the shared `ui_editline` |

@@ -688,7 +688,7 @@ permitted anywhere in the product, the installer, the docs, or the artwork.
 
 **Always safe (for reference):**
 
-- FreeDOS and its GPLv2+ components (kept in `third_party\`, shipped with source).
+- FreeDOS and its GPLv2+ components (fetched at build time, source published with each release).
 - The open/free tools named in the components list (HIMEMX, JEMM386, CTMOUSE,
   UIDE.SYS, SHSUCDX, FreeDOS KEYB, an LGPL/free SmartDrive-style cache).
 - Original Castalia code, copy, menus, palettes, and the text-mode keep logo in
