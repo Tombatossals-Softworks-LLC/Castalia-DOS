@@ -73,7 +73,24 @@ carry that pointer on the media:
 That line belongs in `THIRD-PARTY.txt` on any release image that includes the
 archive tools. All other GPL terms continue to apply.
 
-## Release gate
+## Network kit (opt-in: `fetch-payload.sh --with-net`)
+
+What the online game catalogue (`CATALOG.EXE`, [`../docs/NETWORK.md`](../docs/NETWORK.md))
+runs. Hard-disk distribution only, for the same reason as the archive tools:
+the rescue floppy has 512 bytes free. Staged in `floppy/payload/NET/`, installed
+to `C:\CASTALIA\NET`.
+
+| Component | Version | Upstream | License | Path in dist | Source obligation |
+|---|---|---|---|---|---|
+| Crynwr packet drivers `NE2000.COM`, `3C509.COM`, `ETHERSL.COM`, `PLIP.COM`, `TERMIN.COM` | Crynwr collection 11.x (package `2006-09-02c`) | ibiblio `repositories/1.3/net/crynwr.zip` | **GPL version 1 only** — the driver sources say "under the terms of the GNU General Public License as published by the Free Software Foundation, version 1" (`NE2000.ASM` in the package's `SOURCES.ZIP`). Text: [`GPLv1.txt`](GPLv1.txt), from gnu.org | `C:\CASTALIA\NET` | **required** — ship `SOURCE/CRYNWR/SOURCES.ZIP` as `CRYNWR-SRC.ZIP` |
+| mTCP `DHCP.EXE`, `HTGET.EXE`, `PING.EXE` | 2023-03-31 | ibiblio `repositories/1.3/net/mtcp.zip`; project at `brutman.com/mTCP` | **GPLv3** — `APPINFO/MTCP.LSM` and `NET/MTCP/COPYING.TXT` in the package. Text: [`GPLv3.txt`](GPLv3.txt), from gnu.org (identical to the package's copy but for `http`→`https` in two URLs) | `C:\CASTALIA\NET` | **required** — ship `SOURCE/MTCP/SOURCES.ZIP` as `MTCP-SRC.ZIP` |
+| `UNZIP.EXE`, `CWSDPMI.EXE` | as in the archive tools above | as above | as above | `C:\CASTALIA\NET` | as above |
+
+`CATALOG.EXE` runs all of these as separate programs (`spawnv`), never links to
+them, and is itself MIT: the GPLv1 and GPLv3 terms apply to the components, not
+to Castalia's own code.
+
+
 
 The short gate is in [`README.md`](README.md) and the full one in
 [`../docs/LICENSE-STRATEGY.md`](../docs/LICENSE-STRATEGY.md). Additions this
@@ -92,3 +109,6 @@ manifest implies:
    the same place, and `THIRD-PARTY.txt` on the disk points to the archive.
 4. Keep the CWSDPMI source URL quoted above in `THIRD-PARTY.txt` whenever the
    archive tools are included.
+5. When the network kit is included, carry `GPLv1.txt` and `GPLv3.txt` on the
+   media, and make sure `--with-sources` ran with `--with-net` so that
+   `CRYNWR-SRC.ZIP` and `MTCP-SRC.ZIP` are in the sources archive.

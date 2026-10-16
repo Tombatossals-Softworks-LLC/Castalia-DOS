@@ -16,6 +16,7 @@
  *   6 Sound Setup             (SETSOUND)
  *   7 Configuration       >   CFGEDIT / GAMECFG / backup / restore
  *   8 Help
+ *   C Game Catalogue          (CATALOG: download games over the network)
  *   Q Exit to Command Line
  *
  * Memory discipline: "Launch Games" exits with errorlevel 10 so the
@@ -112,12 +113,13 @@ static ITEM menu[] = {
     { "1   Launch Games",               ACT_LAUNCH,  NULL,          0 },
     { "2   File Manager",               ACT_RUN,     "CASTFM.EXE",  0 },
     { "3   Text Editor",                ACT_RUN,     "CASTEDIT.EXE", 0 },
-    { "4   System & Benchmark      \x10", ACT_SUBMENU, NULL,        0 },
+    { "4   System & Benchmark       \x10", ACT_SUBMENU, NULL,        0 },
     { "5   Disk Tools               \x10", ACT_SUBMENU, NULL,       1 },
     { "6   Minigames                \x10", ACT_SUBMENU, NULL,       2 },
     { "7   Sound Setup",                ACT_RUN,     "SETSOUND.EXE", 0 },
     { "8   Configuration            \x10", ACT_SUBMENU, NULL,       3 },
     { "9   Help",                       ACT_HELP,    NULL,          0 },
+    { "C   Game Catalogue (online)",    ACT_RUN,     "CATALOG.EXE", 0 },
     { "Q   Exit to Command Line",       ACT_EXIT,    NULL,          0 }
 };
 #define N_ITEMS (int)(sizeof(menu) / sizeof(menu[0]))
@@ -780,6 +782,8 @@ static int hotkey_index(int key)
 {
     if (key >= '1' && key <= '9')
         return key - '1';
+    if (key == 'c' || key == 'C')
+        return N_ITEMS - 2;
     if (key == 'q' || key == 'Q')
         return N_ITEMS - 1;
     return -1;

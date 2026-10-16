@@ -39,7 +39,7 @@ CASTALIA DOS
 │   ├── KEYB (keyboard layouts)               C:\DOS
 │   ├── ANSI (optional display)               C:\DOS
 │   ├── Sound environment (SET BLASTER)       C:\CASTALIA\CFG\SOUND.BAT
-│   └── Networking (out of 1.0 scope)
+│   └── Networking (opt-in kit, loaded only while CATALOG.EXE runs; NETWORK.md)
 │
 ├── Utilities (FreeDOS base, curated)
 │   ├── File tools (DIR/COPY/XCOPY/DELTREE)
@@ -174,7 +174,9 @@ See [`BOOT.md`](BOOT.md) for the boot flow and the full config files.
 - **386SX performance:** every resident driver costs conventional memory; the
   profiles exist precisely to load only what the task needs.
 - **Future path:** original Castalia CD and mouse helpers if the open ones
-  ever fall short; networking is explicitly post-1.0.
+  ever fall short. Networking is not part of the 1.0 core; an opt-in kit
+  (packet drivers + mTCP) now exists for the online game catalogue, loaded
+  and unloaded by `CATALOG.EXE` alone — see [`NETWORK.md`](NETWORK.md).
 
 ---
 

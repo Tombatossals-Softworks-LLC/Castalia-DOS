@@ -49,7 +49,7 @@ all: hello $(BUILD)/launch.exe $(BUILD)/castalia.exe $(BUILD)/hwinfo.exe &
      $(BUILD)/siege.exe $(BUILD)/reversi.exe $(BUILD)/barrels.exe &
      $(BUILD)/solitare.exe $(BUILD)/cdplayer.exe $(BUILD)/saver.exe &
      $(BUILD)/casttour.exe $(BUILD)/castlink.exe &
-     $(BUILD)/undel.exe .SYMBOLIC
+     $(BUILD)/undel.exe $(BUILD)/catalog.exe .SYMBOLIC
 	@echo Build complete.  Tools are in the ./build directory.
 
 hello: .SYMBOLIC
@@ -86,6 +86,7 @@ saver:    $(BUILD)/saver.exe    .SYMBOLIC
 casttour: $(BUILD)/casttour.exe .SYMBOLIC
 castlink: $(BUILD)/castlink.exe .SYMBOLIC
 undel:    $(BUILD)/undel.exe    .SYMBOLIC
+catalog:  $(BUILD)/catalog.exe  .SYMBOLIC
 smoke:    $(BUILD)/smoke.exe    .SYMBOLIC
 ktest:    $(BUILD)/ktest.exe    .SYMBOLIC
 vidtest:  $(BUILD)/vidtest.exe  .SYMBOLIC
@@ -116,6 +117,12 @@ $(BUILD)/xmsinfo.obj: $(COMMON)/XMSINFO.C $(COMMON)/XMSINFO.H
 
 $(BUILD)/viddet.obj: $(COMMON)/VIDDET.C $(COMMON)/VIDDET.H
 	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/VIDDET.C
+
+$(BUILD)/crc32.obj: $(COMMON)/CRC32.C $(COMMON)/CRC32.H
+	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/CRC32.C
+
+$(BUILD)/catidx.obj: $(COMMON)/CATIDX.C $(COMMON)/CATIDX.H
+	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/CATIDX.C
 
 $(BUILD)/safeio.obj: $(COMMON)/SAFEIO.C $(COMMON)/SAFEIO.H
 	$(CC) $(CFLAGS) -fo=$@ $(COMMON)/SAFEIO.C
@@ -324,6 +331,15 @@ $(BUILD)/undel.obj: src/undel/UNDEL.C $(COMMON)/UI.H
 
 $(BUILD)/undel.exe: $(BUILD)/undel.obj $(BUILD)/ui.obj
 	$(LINK) system dos name $@ file $(BUILD)/undel.obj,$(BUILD)/ui.obj
+
+$(BUILD)/catalog.obj: src/catalog/CATALOG.C $(COMMON)/UI.H $(COMMON)/INI.H &
+                      $(COMMON)/SAFEIO.H $(COMMON)/DIRW.H $(COMMON)/CATIDX.H &
+                      $(COMMON)/CRC32.H
+	$(CC) $(CFLAGS) -fo=$@ src/catalog/CATALOG.C
+
+$(BUILD)/catalog.exe: $(BUILD)/catalog.obj $(OBJS_COMMON) $(BUILD)/safeio.obj &
+                      $(BUILD)/dirw.obj $(BUILD)/catidx.obj $(BUILD)/crc32.obj
+	$(LINK) system dos name $@ file $(BUILD)/catalog.obj,$(BUILD)/ini.obj,$(BUILD)/ui.obj,$(BUILD)/safeio.obj,$(BUILD)/dirw.obj,$(BUILD)/catidx.obj,$(BUILD)/crc32.obj
 
 # --- KTEST.EXE  (CI kernel-API probe; not part of 'all') --------------
 $(BUILD)/ktest.obj: tests/dos/KTEST.C

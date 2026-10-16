@@ -10,6 +10,9 @@ file=PROFILES.TXT
 [GAMES]
 title=Installing Games
 file=GAMES.TXT
+[NETWORK]
+title=Game Catalogue and Network
+file=NETWORK.TXT
 [SOUND]
 title=Configuring Sound Blaster
 file=SOUND.TXT

@@ -609,6 +609,12 @@ layouts, and refinements from real-world 1.0 feedback.
 component (permanent project rule). Further scope (e.g. TCP/IP tooling) is left
 to a future major line, not 1.x.
 
+> **Note (2026-10).** An opt-in network kit and the online game catalogue
+> (`CATALOG.EXE`) now exist in the tree for the hard-disk distribution
+> (`fetch-payload.sh --with-net`, [`NETWORK.md`](NETWORK.md)). Which release
+> first ships them is still a release decision; the rescue floppy never will
+> (it has no room).
+
 ---
 
 ## 16.9 Build-artifact naming, versioning, and `dist/`

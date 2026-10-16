@@ -25,6 +25,9 @@ INSTALLING GAMES
 3. Start the launcher: from the Castalia menu pick "Launch Games", or
    type LAUNCH at the prompt. Choose the game and press Enter.
 
+With a network card, the Game Catalogue (main menu, C) does steps
+1 and 2 for you. See "Game Catalogue and Network".
+
 Tip: if a game came with its own SETUP or INSTALL program, run that
 first inside the game's folder to configure sound and video.
 

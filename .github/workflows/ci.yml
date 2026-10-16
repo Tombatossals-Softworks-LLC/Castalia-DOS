@@ -121,8 +121,8 @@ jobs:
           # Tied to the pinned digests, so changing a pin starts a fresh
           # cache; fetch-payload.sh re-checks every cached file anyway.
           key: freedos-payload-fd13-${{ hashFiles('scripts/payload.sha256') }}
-      - name: Fetch the FreeDOS payload (with the GPL sources)
-        run: bash scripts/fetch-payload.sh --with-sources
+      - name: Fetch the FreeDOS payload (with the network kit and GPL sources)
+        run: bash scripts/fetch-payload.sh --with-net --with-sources
       - name: DOS smoke test (SMOKE.EXE in headless DOSBox)
         run: bash scripts/test-dos.sh
       - name: Video-adapter detection (VIDDET vs 11 emulated adapters)
@@ -137,6 +137,8 @@ jobs:
         run: bash scripts/test-kernel-api.sh dist/castalia-ci.img
       - name: Boot test (image boots to AUTOEXEC in DOSBox)
         run: bash scripts/test-boot.sh dist/castalia-ci.img
+      - name: Online catalogue (a game installed over an emulated NE2000 under QEMU)
+        run: bash scripts/test-catalog.sh dist/castalia-ci.img
       - name: Upload floppy image (CI test artifact)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
