@@ -151,7 +151,7 @@ should attempt.
 | Protected-mode kernel                | Out of charter  | Kernel is real-mode FreeDOS `KERNEL.SYS`.        |
 | Preemptive multitasking              | Out of charter  | DOS is single-tasking; TSRs only.                |
 | Long filenames (VFAT/LFN)            | Deferred        | 8.3 only in 1.0. LFN muddies FAT compatibility.  |
-| Networking by default                | Deferred        | Optional packet-driver stack possible post-1.0.  |
+| Networking by default                | Deferred        | Not by default; opt-in kit for CATALOG.EXE only. |
 | USB (storage, HID, audio)            | Deferred        | No open real-mode USB stack we can rely on.      |
 | Modern filesystems (FAT32/NTFS/ext)  | Out for 1.0     | FAT12/FAT16 only; FAT32 is a 1.1 investigation.  |
 | GUI desktop / windowing shell        | Out of charter  | Text-mode UI is the product's identity.          |
@@ -159,8 +159,9 @@ should attempt.
 **Note on FAT32 and LFN.** These are *deferred*, not *forbidden*: they may be
 revisited in 1.1+. They are Tier D for 1.0 because each one weakens the "behaves
 like MS-DOS 5.0/6.22, FAT12/FAT16" promise that everything else is tested
-against. Networking, likewise, can be added as an *optional* packet-driver load
-without becoming a default.
+against. Networking, likewise, is an *optional* packet-driver load that never
+becomes a default: the online game catalogue loads a driver when it opens and
+unloads it when it closes ([`NETWORK.md`](NETWORK.md)).
 
 ---
 

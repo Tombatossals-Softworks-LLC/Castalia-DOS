@@ -30,6 +30,7 @@ architecture, and records what is deliberately out of scope.
 | Product demos / attract loops | `CASTTOUR.EXE` interactive guided tour | ✅ prototype |
 | LapLink (serial transfer) | `CASTLINK.EXE` | ✅ prototype (untested on metal) |
 | Boot splash (OEM logos) | `BANNER.EXE` animated castle | ✅ prototype |
+| BBS / online game downloads | `CATALOG.EXE` online game catalogue over a packet driver + mTCP; the driver is loaded only while it runs ([`NETWORK.md`](NETWORK.md)) | ✅ prototype (tested under QEMU, not on metal) |
 | PKZIP / ARJ / LHA | Info-ZIP `UNZIP`/`ZIP` bundled (`fetch-payload.sh --with-archiver`) | ✅ third-party |
 | General text editor (QEdit-class) | `CASTEDIT.EXE` (line-oriented; `.BAK` on save; save-as; new files) | ✅ prototype |
 | DOS HELP / readme viewers | `HELP.EXE` topic reader + the help pages | ✅ prototype |

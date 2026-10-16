@@ -58,6 +58,7 @@ castalia-dos/
 ├── src/                     C source for the Castalia tools
 │   ├── common/              INI parser + text-mode UI library
 │   ├── launch/              LAUNCH.EXE  (game launcher)
+│   ├── catalog/             CATALOG.EXE (online game catalogue)
 │   ├── castalia/            CASTALIA.EXE (main menu)
 │   └── <tool>/              one directory per tool (see docs/APPS.md)
 ├── build/                   Build output (.obj / .exe)
@@ -80,6 +81,7 @@ castalia-dos/
 | [`COMPATIBILITY.md`](docs/COMPATIBILITY.md) | 3 | Compatibility tiers + per-game matrix |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 4 | Full system architecture |
 | [`KERNEL.md`](docs/KERNEL.md) | — | The Castalia kernel: source mods + INT 2Fh identity API |
+| [`NETWORK.md`](docs/NETWORK.md) | — | Packet drivers, mTCP and the online game catalogue |
 | [`BOOT.md`](docs/BOOT.md) | 5 | Boot process + example config files |
 | [`MEMORY.md`](docs/MEMORY.md) | 6 | Memory management & profiles |
 | [`LAUNCHER.md`](docs/LAUNCHER.md) | 7, 8 | Game launcher + main menu design |
@@ -121,7 +123,9 @@ building via `wmake`:
   editor), `CASTEDIT.EXE` (text editor), `CASTFM.EXE` (file manager),
   `HWINFO.EXE` (diagnostics), `HELP.EXE` (help-topic reader),
   `CASTID.EXE` (kernel signature card — reads the Castalia kernel identity
-  API live; see [`docs/KERNEL.md`](docs/KERNEL.md)).
+  API live; see [`docs/KERNEL.md`](docs/KERNEL.md)), `CATALOG.EXE` (online
+  game catalogue: download, verify, unpack and register games over a packet
+  driver; hard-disk edition, see [`docs/NETWORK.md`](docs/NETWORK.md)).
 - **Showcase:** `CASTMARK.EXE` (inspector + benchmark with animated bars and
   a real FNSTSW coprocessor probe), `CASTCOPY.EXE` (diskette rescue with
   verify), `CASTDOC.EXE` (read-only disk doctor with a live surface map).
@@ -143,7 +147,7 @@ Local, fast (gcc only):
 
 ```sh
 scripts/check.sh      # gate: C89 syntax of every tool, shell lint, repo sanity
-scripts/test-unit.sh  # unit tests: the real INI, UI, SPK, CASTMARK and CASTLINK code, natively
+scripts/test-unit.sh  # unit tests: the real INI, UI, SPK, CASTMARK, CASTLINK and catalogue-index code, natively
 ```
 
 Full pipeline (what CI runs on every push —
@@ -160,7 +164,9 @@ Full pipeline (what CI runs on every push —
    `scripts/build-floppy.sh` produces the bootable image, and
    `scripts/test-boot.sh` **boots it** in DOSBox and asserts the
    `CASTALIA-BOOT-OK` marker written by `AUTOEXEC.BAT`. The image is uploaded
-   as a CI artifact.
+   as a CI artifact. `scripts/test-catalog.sh` then boots it in QEMU with an
+   emulated NE2000 card and installs a game from a test catalogue over the
+   network ([`docs/NETWORK.md`](docs/NETWORK.md) §8).
 
 (Actions must be enabled for the repository; on a private repo that also
 needs available Actions minutes.)
