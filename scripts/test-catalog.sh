@@ -42,7 +42,10 @@ for t in qemu-system-i386 mcopy mmd mformat mpartition python3; do
     command -v "$t" >/dev/null 2>&1 || { err "missing tool: $t"; exit 2; }
 done
 IMG="${1:-$(find "$ROOT/dist" -maxdepth 1 -name '*.img' -type f 2>/dev/null | sort | head -1)}"
-[ -n "$IMG" ] && [ -f "$IMG" ] || { err "no floppy image; build one first"; exit 2; }
+if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
+    err "no floppy image; build one first"
+    exit 2
+fi
 IMG="$(cd "$(dirname "$IMG")" && pwd)/$(basename "$IMG")"
 for f in build/catalog.exe build/snake.exe floppy/payload/NET/NE2000.COM \
          floppy/payload/NET/HTGET.EXE floppy/payload/NET/UNZIP.EXE; do
