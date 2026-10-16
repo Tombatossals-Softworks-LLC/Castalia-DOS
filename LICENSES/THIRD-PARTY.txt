@@ -11,7 +11,8 @@ installer) is MIT-licensed and its source is the project repository.  The
 Castalia name, wordmark and fortress artwork are not covered by that grant.
 
 Where the licence text lives on this medium: \CASTALIA\LICENSE\
-(GPLv2.txt, and the Artistic Licence as ARTISTIC.TXT).
+(GPLv2.txt, and the Artistic Licence as ARTISTIC.TXT; GPLv1.txt and
+GPLv3.txt on media that include the network kit).
 
 Where the source lives: the source of the GPL and Artistic components does
 not fit on a 1.44 MB disk, so it is published beside the disk image, from the
@@ -87,6 +88,21 @@ disk without that archive, ask whoever gave it to you for it.
 
 12. Castalia game database  (GAMES.INI)
     Licence : CC0 1.0 Universal (public domain dedication) -> CC0-1.0.txt
+
+13. Crynwr packet drivers  (NE2000.COM, 3C509.COM, ETHERSL.COM, PLIP.COM,
+    TERMIN.COM, in \CASTALIA\NET)       [only on media with the network kit]
+    Licence : GNU General Public License, version 1  -> GPLv1.txt
+              copyright 1988-1993 Russell Nelson and contributors
+    Source  : SOURCES\CRYNWR-SRC.ZIP
+
+14. mTCP  (DHCP.EXE, HTGET.EXE, PING.EXE, in \CASTALIA\NET)
+                                          [only on media with the network kit]
+    Licence : GNU General Public License, version 3  -> GPLv3.txt
+              copyright 2008-2023 Michael B. Brutman
+    Source  : SOURCES\MTCP-SRC.ZIP; project at http://www.brutman.com/mTCP/
+
+    The network kit also carries UNZIP.EXE and CWSDPMI.EXE (items 9 and
+    10 above) in \CASTALIA\NET, under the same terms.
 
 
 No Microsoft-owned code, text or branding is present on this medium.

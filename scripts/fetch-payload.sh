@@ -21,7 +21,8 @@
 #  per docs/LICENSE-STRATEGY.md - CI test artifacts are not releases.
 #
 #  Usage:
-#     scripts/fetch-payload.sh [--cache DIR] [--with-archiver] [--with-sources]
+#     scripts/fetch-payload.sh [--cache DIR] [--with-archiver] [--with-net]
+#                              [--with-sources]
 #  --cache DIR keeps the downloaded archives outside the repo so CI can
 #  restore them (default: .payload-cache, gitignored).
 #  --with-archiver additionally stages the Info-ZIP tools into
@@ -53,12 +54,18 @@ WITH_ARCHIVER=0
 #  LICENSES/MANIFEST.md), and every FreeDOS package helpfully carries its own
 #  source, so a release build only has to keep it.
 WITH_SOURCES=0
+#  --with-net stages the network kit for the online catalogue (CATALOG.EXE):
+#  Crynwr packet drivers, mTCP's DHCP and HTGET, and the Info-ZIP UNZIP
+#  with its DPMI host, into payload/NET/.  Hard-disk distribution only:
+#  the rescue floppy has no room for it (docs/NETWORK.md).
+WITH_NET=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --cache)          CACHE="$2"; shift 2 ;;
         --with-archiver)  WITH_ARCHIVER=1; shift ;;
         --with-sources)   WITH_SOURCES=1; shift ;;
+        --with-net)       WITH_NET=1; shift ;;
         *) printf 'ERR  unknown option: %s\n' "$1" >&2; exit 1 ;;
     esac
 done
@@ -312,6 +319,52 @@ if [ "$WITH_ARCHIVER" = "1" ]; then
     ok "archive tools staged in payload/ARCHIVER (not on the rescue floppy)"
 fi
 
+# ---- 2.5 Network kit for the online catalogue (opt-in) --------------
+#
+#  What CATALOG.EXE runs, all from C:\CASTALIA\NET once installed:
+#
+#  * Crynwr packet drivers (GPL): NE2000 for NE2000 clones and emulators,
+#    3C509 for 3Com EtherLink III, ETHERSL for SLIP over a serial port
+#    (a null-modem cable or a serial WiFi modem), PLIP for a parallel
+#    cable to a machine that routes; TERMIN unloads whichever was loaded.
+#  * mTCP 2023-03-31 (GPLv3): DHCP to get an address, HTGET to download,
+#    PING for the user who wants to know whether the network is there.
+#    mTCP is real-mode and runs on an 8088, so the 386SX is comfortable.
+#  * Info-ZIP UNZIP and CWSDPMI, as in --with-archiver: UNZIP is a DJGPP
+#    build, and a DJGPP program finds CWSDPMI.EXE beside itself.
+#
+#  Every archive is pinned in scripts/payload.sha256 like the rest.
+#  Sources: --with-sources adds MTCP-SRC.ZIP and CRYNWR-SRC.ZIP.
+if [ "$WITH_NET" = "1" ]; then
+    info "gathering the network kit (opt-in)"
+    NET_OUT="$PAYLOAD/NET"
+    mkdir -p "$NET_OUT"
+
+    net_get() {  # group/pkg.zip member dest
+        local rel="$1" member="$2" dest="$3" pkg
+        pkg="$(basename "$rel")"
+        fetch "$PKG_ROOT/$rel" "$pkg"
+        unzip -o -q -j "$CACHE/$pkg" "$member" -d "$NET_OUT"
+        [ -f "$NET_OUT/$(basename "$member")" ] || {
+            err "missing $member in $pkg"; exit 1; }
+        [ "$(basename "$member")" = "$dest" ] || \
+            mv "$NET_OUT/$(basename "$member")" "$NET_OUT/$dest"
+    }
+
+    for drv in NE2000 3C509 ETHERSL PLIP TERMIN; do
+        net_get net/crynwr.zip DRIVERS/CRYNWR/$drv.COM $drv.COM
+    done
+    net_get net/mtcp.zip      NET/MTCP/DHCP.EXE     DHCP.EXE
+    net_get net/mtcp.zip      NET/MTCP/HTGET.EXE    HTGET.EXE
+    net_get net/mtcp.zip      NET/MTCP/PING.EXE     PING.EXE
+    net_get net/mtcp.zip      NET/MTCP/COPYING.TXT  MTCP.LIC
+    net_get archiver/unzip.zip BIN/UNZIP.EXE        UNZIP.EXE
+    net_get archiver/unzip.zip DOC/UNZIP/LICENSE    UNZIP.LIC
+    net_get util/cwsdpmi.zip  BIN/CWSDPMI.EXE       CWSDPMI.EXE
+    net_get util/cwsdpmi.zip  DOC/CWSDPMI/COPYING.CWS CWSDPMI.LIC
+    ok "network kit staged in payload/NET (hard-disk distribution only)"
+fi
+
 # ---- 2.6 Vendored sources (opt-in) ----------------------------------
 #
 #  GPLv2 section 3 wants the source of every GPL binary on the media.  Each
@@ -321,13 +374,15 @@ fi
 if [ "$WITH_SOURCES" = "1" ]; then
     info "staging vendored sources (GPL/Artistic obligation)"
     mkdir -p "$PAYLOAD/SOURCES"
+    NET_SRC=""
+    [ "$WITH_NET" = "1" ] && NET_SRC="net/mtcp net/crynwr"
     #  Every component on the media, not only the ones fetched as packages:
     #  on the FloppyEdition route the shell and the base utilities come out
     #  of the boot image, so their packages are fetched here just for the
     #  source.  The 1.3 packages are the same release as the image.
     for rel in base/kernel base/freecom base/fdisk base/format base/mem \
                base/xcopy base/chkdsk base/himemx base/jemm base/shsucdx \
-               base/ctmouse drivers/uide; do
+               base/ctmouse drivers/uide $NET_SRC; do
         comp="$(basename "$rel")"
         pkg="$comp.zip"
         fetch "$PKG_ROOT/$rel.zip" "$pkg"
