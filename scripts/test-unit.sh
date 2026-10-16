@@ -40,6 +40,13 @@ gcc -x c -std=c89 -Wall -Wextra -Werror -Isrc/common \
 "$OUT/test_ini"
 
 echo
+echo "== building tests/unit/test_catidx.c against CATIDX.C + CRC32.C =="
+gcc -x c -std=c89 -Wall -Wextra -Werror -Isrc/common \
+    -o "$OUT/test_catidx" tests/unit/test_catidx.c src/common/CATIDX.C \
+    src/common/CRC32.C
+(cd "$OUT" && ./test_catidx)
+echo
+
 echo "== building tests/unit/test_spk.c against src/common/SPK.C =="
 gcc -x c -std=c89 -Wall -Wextra -Werror -Isrc/common \
     -o "$OUT/test_spk" tests/unit/test_spk.c
