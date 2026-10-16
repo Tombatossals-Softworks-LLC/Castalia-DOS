@@ -11,7 +11,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOOLS=(castalia launch hwinfo setsound memprof setup safeboot cfgedit
        gamecfg castfm castmark castcopy castdoc snake puzzle almena
        minas banner help castedit castid siege reversi barrels
-       solitare cdplayer saver casttour castlink undel
+       solitare cdplayer saver casttour castlink undel catalog
        smoke ktest vidtest spktest cdtest)
 
 fails=0

@@ -1,0 +1,52 @@
+THE GAME CATALOGUE AND THE NETWORK
+==================================
+
+The Game Catalogue (main menu, C) lists games published on the
+internet. Pick one, press Enter, and it is downloaded, checked,
+unpacked into C:\GAMES and added to the Game Launcher.
+
+WHAT YOU NEED
+-------------
+A way onto a network that has a "packet driver":
+  - an ISA network card (NE2000 or clone, 3Com 3C509) and a
+    cable to your router;
+  - or a null-modem cable to a modern PC that routes SLIP;
+  - or a parallel (LapLink) cable to a PC that routes PLIP.
+The drivers for all of these are in C:\CASTALIA\NET.
+
+SETTING IT UP
+-------------
+Edit C:\CASTALIA\CFG\CASTALIA.INI and fill in [net] driver:
+
+  NE2000 at port 300h, IRQ 10 ..  NE2000.COM 0x60 10 0x300
+  3Com 3C509 ...................  3C509.COM 0x60
+  SLIP on COM1, 19200 baud .....  ETHERSL.COM 0x60 4 0x3F8 19200
+  PLIP on LPT1 .................  PLIP.COM 0x60 7 0x378
+
+Use the IRQ and port your card is set to, and keep them clear of
+the sound card (a Sound Blaster usually takes IRQ 5 or 7).
+
+With "dhcp = yes" the router gives the PC an address. Without a
+DHCP server, set "dhcp = no" and put IPADDR, NETMASK, GATEWAY and
+NAMESERVER lines in C:\CASTALIA\NET\MTCP.CFG.
+
+MEMORY
+------
+Nothing is loaded at boot. The catalogue loads the driver when it
+opens and removes it when you leave, so games keep every byte.
+
+IF IT DOES NOT CONNECT
+----------------------
+"did not load"     the IRQ or port in driver= is not the card's.
+"No address"       check the cable and that the router is on.
+"redirected"       the catalogue address must be http://, not
+                   https:// - a 386 cannot speak modern TLS.
+"damaged"          the download did not arrive whole; try again.
+
+To test the line by hand at the prompt (use your own driver= line
+and your router's address):
+  SET MTCPCFG=C:\CASTALIA\NET\MTCP.CFG
+  C:\CASTALIA\NET\NE2000 0x60 10 0x300
+  C:\CASTALIA\NET\DHCP
+  C:\CASTALIA\NET\PING 192.168.1.1
+  C:\CASTALIA\NET\TERMIN 0x60
